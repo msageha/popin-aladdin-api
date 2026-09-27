@@ -1,0 +1,2 @@
+# checkout 先の OS に依らず、追跡するテキストファイルの改行を LF に正規化する
+* text=auto eol=lf

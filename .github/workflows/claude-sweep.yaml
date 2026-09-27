@@ -1,0 +1,130 @@
+name: Claude Sweep
+on:
+  schedule:
+    # 毎週月曜 09:00 JST
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: claude-sweep
+  cancel-in-progress: false
+
+# 前回レビュー済み地点を tag (claude-reviewed) で記録し、そこから HEAD までの
+# 差分だけをレビューして issue を起票する。修正 PR は作らない (issue が終点)。
+# Claude を動かす review job には job の permissions に閉じた github.token だけを渡し、
+# tag の更新 (contents: write) は Claude を通らない別 job に分離する。
+# これで閉じるのは GitHub token 経由のリポジトリ書き込みまで。review job には issues: write の token と
+# Claude の OAuth credential が残るため、prompt injection 時の issue 操作・credential 露出は
+# --allowedTools による Bash の制限で緩和するにとどまる。
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      base: ${{ steps.plan.outputs.base }}
+      head: ${{ steps.plan.outputs.head }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # tag の存在確認と差分計算に全履歴 + タグが必要
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Determine review range
+        id: plan
+        run: |
+          head="$(git rev-parse HEAD)"
+          echo "head=${head}" >> "$GITHUB_OUTPUT"
+          if ! git rev-parse -q --verify refs/tags/claude-reviewed > /dev/null; then
+            # 初回: 全体レビューは巨大になりすぎるため、tag を張るだけで終了する
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "claude-reviewed tag が無いため bootstrap する (レビューは次回から)"
+          elif git diff --quiet "claude-reviewed..${head}"; then
+            # 差分ゼロなら Claude を起動しない (コストガード)
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+            echo "前回レビュー以降の差分が無いためスキップする"
+          else
+            echo "mode=review" >> "$GITHUB_OUTPUT"
+            echo "base=$(git rev-parse claude-reviewed)" >> "$GITHUB_OUTPUT"
+          fi
+
+  review:
+    needs: plan
+    if: needs.plan.outputs.mode == 'review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Claude Code sweep
+        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        env:
+          # Claude が Bash から gh CLI を使うための token
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # 未指定だと action は OIDC で Claude GitHub App の token を取得し、その権限は
+          # 本 job の permissions に縛られない。github.token を渡して job の権限に閉じる
+          github_token: ${{ github.token }}
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh search issues:*),Bash(gh issue create:*),Bash(gh label list:*),Bash(gh label create:*)"
+          prompt: |
+            このリポジトリの定期レビュー sweep を実行してください。
+
+            対象範囲: ${{ needs.plan.outputs.base }}..${{ needs.plan.outputs.head }}
+
+            手順:
+            1. `git log --oneline <base>..<head>` と `git diff <base>..<head>` で変更内容を把握する。
+            2. 差分とその周辺コードを以下の観点でレビューする:
+               - correctness: バグ、エッジケースの見落とし、エラーハンドリングの欠落、レグレッション
+               - security: 入力検証、認証・認可、secret の扱い、危険なコマンド実行
+               - simplification: コードの重複、既存ユーティリティの再利用漏れ、不要な複雑さ、非効率な実装
+            3. 起票前に重複排除する: `gh issue list --label claude-sweep --state all --limit 1000` で
+               過去の指摘を全件確認し、同一の問題 (同じ箇所・同じ趣旨) は起票しない。close 済みで
+               wontfix 判断されたものも再起票しない。
+            4. label が無ければ `gh label create claude-sweep --description "Claude weekly sweep findings" --color 5319E7` で作成する。
+            5. 新規の指摘のみ、1 指摘 = 1 issue で起票する。各 issue には以下を含める:
+               - 対象箇所 (file:line。コミット SHA 付きの permalink)
+               - 問題の説明と、そう判断した根拠
+               - 推奨する修正方針
+               - severity (high/medium/low) と confidence (high/medium/low)
+               - label: claude-sweep
+            6. 修正 PR は作らない。コードも変更しない。issue 起票がこのタスクの終点。
+
+            最後に、起票した issue の一覧と、重複としてスキップした指摘の要約を出力してください。
+
+  # レビュー成功後 (または初回 bootstrap 時) に tag を HEAD へ進める。
+  # review job が失敗した場合は tag を進めず、次回同じ範囲を再レビューさせる。
+  update-tag:
+    needs: [plan, review]
+    if: >-
+      !cancelled() && (
+        needs.plan.outputs.mode == 'bootstrap' ||
+        (needs.plan.outputs.mode == 'review' && needs.review.result == 'success')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # tag の push に checkout が残す認証情報 (persist-credentials の既定値 true) を使う
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Move claude-reviewed tag to HEAD
+        env:
+          HEAD_SHA: ${{ needs.plan.outputs.head }}
+        run: |
+          git tag -f claude-reviewed "$HEAD_SHA"
+          git push --force origin refs/tags/claude-reviewed

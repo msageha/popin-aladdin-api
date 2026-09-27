@@ -1,54 +1,66 @@
 name: CI
 
 on:
+  # push トリガーは置かない: main は PR 必須 (ruleset。README「GitHub リポジトリ設定」参照) なので
+  # PR で検証済みの内容しか入らない。
+  # デフォルト types の明示: closed 等 CI が不要な PR イベントでは走らせない
   pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# job 名がそのまま required status check の名前になる (README「GitHub リポジトリ設定」参照)。
 jobs:
-  pre-commit:
-    name: Pre-commit
+  prek:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # mise.lock があるため `mise install --locked` になり、mise.toml との不整合はここで失敗する。
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      # ruff / ty の hook は uv run --locked で動くため、uv.lock と pyproject.toml の不整合もここで失敗する
+      - name: Run prek
+        run: mise exec -- prek run --all-files
+
+  gitleaks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          enable-cache: true
+          # コミット履歴全体をスキャン対象にする
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: uv sync --locked
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: Run gitleaks
+        run: mise exec -- gitleaks git --redact -v .
 
-  test:
-    name: Test
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          enable-cache: true
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: uv sync --locked
+      - name: Install mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       - name: Run tests
-        run: uv run pytest
+        run: mise exec -- uv run --locked pytest

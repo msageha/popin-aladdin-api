@@ -20,7 +20,8 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 
-USER appuser
+# 数値 UID にすると実行環境側 (Kubernetes の runAsNonRoot 等) が非 root を検証できる (hadolint DL3066)
+USER 10001
 EXPOSE 8000
 
 CMD ["uvicorn", "popin_aladdin_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
