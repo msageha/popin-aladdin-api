@@ -13,10 +13,10 @@
 ## セットアップ
 
 ```bash
-make setup        # uv sync + .env.example を .env にコピー (既にあればスキップ)
+make setup        # uv sync
 ```
 
-`.env` で接続先を指定します。全て省略可で、既定値は次のとおりです。
+接続先を変えるときはリポジトリ直下に `.env` を作って指定します。全て省略可で、既定値は次のとおりです。
 
 | 変数                 | 既定値                | 説明                                                   |
 | -------------------- | --------------------- | ------------------------------------------------------ |
@@ -39,8 +39,10 @@ Swagger UI: http://127.0.0.1:8000/docs
 
 ```bash
 make build-image  # docker build -t popin-aladdin-api:latest .
-make run-image    # docker run --rm -p 8000:8000 --env-file .env popin-aladdin-api:latest
+make run-image    # docker run --rm -p 8000:8000 [--env-file .env] popin-aladdin-api:latest
 ```
+
+`.env` があれば `--env-file` でコンテナに渡します。
 
 `uv` ビルダで依存とパッケージを `.venv` にインストールし、`python:slim` ランナーへ
 `.venv` だけをコピーして非 root で実行します。

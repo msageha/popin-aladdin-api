@@ -10,7 +10,7 @@ from .device.renderer import UPNP_PORT
 
 
 class Settings(BaseSettings):
-    # .env.example には未使用のキー (USERNAME / PASSWORD) が残っているため extra は無視する。
+    # pydantic-settings は既定で .env の未知キーを拒否するため、他用途のキーが混ざっていても起動できるよう無視する。
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     popin_aladdin_host: str = Field(

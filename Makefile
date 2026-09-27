@@ -1,12 +1,6 @@
 .PHONY: setup
 setup:
 	uv sync
-	@if [ -f .env ]; then \
-		echo ".env already exists, skipping copy"; \
-	else \
-		cp .env.example .env; \
-		echo "Edit .env to set POPIN_ALADDIN_HOST if needed."; \
-	fi
 
 .PHONY: run
 run:
@@ -33,7 +27,7 @@ build-image:
 
 .PHONY: run-image
 run-image:
-	docker run --rm -p 8000:8000 --env-file .env popin-aladdin-api:latest
+	docker run --rm -p 8000:8000 $(if $(wildcard .env),--env-file .env) popin-aladdin-api:latest
 
 .PHONY: precommit-install
 precommit-install:
