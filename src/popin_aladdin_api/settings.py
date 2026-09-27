@@ -5,7 +5,13 @@ from urllib.parse import urlsplit
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .device.remote import REMOTE_TCP_PORT, REMOTE_UDP_PORT
+from .device.remote import (
+    DISCOVERY_UDP_PORT,
+    REMOTE_CMD_UDP_PORT,
+    REMOTE_REPLY_UDP_PORT,
+    REMOTE_TCP_PORT,
+    REMOTE_UDP_PORT,
+)
 from .device.renderer import UPNP_PORT
 
 
@@ -25,11 +31,23 @@ class Settings(BaseSettings):
     )
     control_tcp_port: int = Field(
         default=REMOTE_TCP_PORT,
-        description="独自プロトコル TCP (ライト・文字入力・音声)",
+        description="独自プロトコル TCP (ライト・文字入力・音声・deeplink・照会)",
     )
     control_udp_port: int = Field(
         default=REMOTE_UDP_PORT,
-        description="独自プロトコル UDP (方向キー・ハードキー・保守)",
+        description="独自プロトコル UDP (方向キー・ハードキー)",
+    )
+    control_cmd_udp_port: int = Field(
+        default=REMOTE_CMD_UDP_PORT,
+        description="独自プロトコル UDP JSON コマンド (スクリーンショット・メモリ解放・実行時情報・電源断)",
+    )
+    control_reply_udp_port: int = Field(
+        default=REMOTE_REPLY_UDP_PORT,
+        description="UDP JSON コマンドの応答を受け取るこのサーバー側のポート",
+    )
+    discovery_udp_port: int = Field(
+        default=DISCOVERY_UDP_PORT,
+        description="デバイス発見のブロードキャスト先ポート",
     )
     timeout: float = Field(
         default=10.0, description="デバイスへの各リクエストのタイムアウト (秒)"

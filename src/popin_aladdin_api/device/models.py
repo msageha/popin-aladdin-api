@@ -30,7 +30,11 @@ class LightButton(StrEnum):
 
 
 class ProjectorKey(StrEnum):
-    """プロジェクターのリモコンキー。方向キー (押下 / 離上) とハードキー (単発)。"""
+    """プロジェクターのリモコンキー。
+
+    方向キーは押下 → 離上、フォーカス調整は押下と離上を連続送信、それ以外は単発。
+    ``home_long`` / ``menu_long`` は公式アプリの長押しに相当する。
+    """
 
     HOME = "home"
     UP = "up"
@@ -38,11 +42,21 @@ class ProjectorKey(StrEnum):
     DOWN = "down"
     OK = "ok"
     LEFT = "left"
+    FOCUS_PLUS = "focus_plus"
+    FOCUS_MINUS = "focus_minus"
+    HOME_LONG = "home_long"
     BACK = "back"
     VOL_UP = "vol_up"
     VOL_DOWN = "vol_down"
     POWER = "power"
     MENU = "menu"
+    MENU_LONG = "menu_long"
+    SETTINGS = "settings"
+    NETFLIX = "netflix"
+    YOUTUBE = "youtube"
+    PRIME_VIDEO = "prime_video"
+    CUSTOM = "custom"
+    CUSTOM_LONG = "custom_long"
 
 
 class UpnpService(BaseModel):
@@ -141,3 +155,78 @@ class RendererStatus(BaseModel):
         description="トラック長 (秒)", examples=[212.0]
     )
     position_seconds: float | None = Field(description="再生位置 (秒)", examples=[30.0])
+
+
+class RemoteVersion(BaseModel):
+    """TCP 制御プロトコルの Version ハンドシェイクでデバイスが返す自己情報。"""
+
+    code: int | None = Field(description="プロトコル版", examples=[10])
+    model: str | None = Field(description="機種名", examples=["Aladdin 2"])
+    device_name: str | None = Field(description="デバイス名")
+    pid: str | None = Field(description="機体 ID")
+    aladdin_id: str | None = Field(description="Aladdin アカウント連携 ID")
+    platform: str | None = Field(description="OS 系統", examples=["Android", "webos"])
+    os_version: str | None = Field(description="OS 版")
+    sdk_int: int | None = Field(description="Android API level")
+    lang: str | None = Field(description="言語")
+    country: str | None = Field(description="国")
+    total_space: int | None = Field(description="ストレージ容量 (byte)")
+    free_space: int | None = Field(description="ストレージ空き (byte)")
+    server_access: bool | None = Field(description="クラウド接続の有無")
+    feature_access: dict[str, int | None] | None = Field(
+        description="機能ごとの利用可否 (1 = 利用可)。キーは focus / input / memory_release など"
+    )
+    capability: dict[str, int | None] | None = Field(
+        description="対応機能 (1 = 対応、null = 不明)。キーは screenshot / app_list"
+    )
+
+
+class AlbumFile(BaseModel):
+    name: str | None = Field(description="ファイル名")
+    size: int | None = Field(description="byte")
+    type: int | None = Field(description="1 = 写真, 2 = サムネイル, 10..12 = 時計")
+
+
+class RemoteAlbum(BaseModel):
+    """フォトメモリー (デバイス内アルバム) の状態。"""
+
+    count: int | None = Field(description="保存されている写真の数")
+    total_space: int | None = Field(description="byte")
+    free_space: int | None = Field(description="byte")
+    light_version: str | None = Field(description="ライト部のファームウェア版")
+    files: list[AlbumFile] = Field(description="保存されているファイル")
+
+
+class RemoteAppInfo(BaseModel):
+    """デバイス上のアプリの有無と版。"""
+
+    package: str | None = Field(description="package 名", examples=["jp.co.tver.tvapp"])
+    installed: bool | None = Field(description="インストール済みか")
+    version_code: int | None = Field(description="versionCode")
+    version_name: str | None = Field(description="versionName")
+
+
+class RemoteDeviceInfo(BaseModel):
+    """UDP 制御チャネルの deviceInfo 応答 (action 30410)。前面アプリなど実行時の情報。"""
+
+    device_name: str | None = Field(description="デバイス名")
+    device_mode: str | None = Field(description="デバイスのモード")
+    foreground_app: str | None = Field(description="前面アプリ名")
+    foreground_package: str | None = Field(description="前面アプリの package")
+    runtime: int | None = Field(description="稼働時間 (デバイス報告値、単位不明)")
+    rom: int | None = Field(description="ROM 容量 (デバイス報告値)")
+    mst: str | None = Field(description="デバイス報告値 (用途不明)")
+    tips: str | None = Field(description="デバイス報告値 (用途不明)")
+
+
+class DiscoveredDevice(BaseModel):
+    """UDP 8100 ブロードキャストに応答した Aladdin。"""
+
+    ip_address: str | None = Field(description="IP アドレス")
+    model: str | None = Field(description="機種名", examples=["Aladdin 2"])
+    name: str | None = Field(description="デバイス名")
+    pid: str | None = Field(description="機体 ID")
+    mac: str | None = Field(description="MAC アドレス")
+    version: int | None = Field(description="プロトコル版")
+    zipcode: str | None = Field(description="設定されている郵便番号")
+    connected: bool | None = Field(description="他のクライアントが接続中か")

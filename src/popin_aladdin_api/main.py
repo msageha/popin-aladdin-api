@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             settings.hostname,
             tcp_port=settings.control_tcp_port,
             udp_port=settings.control_udp_port,
+            cmd_udp_port=settings.control_cmd_udp_port,
+            reply_udp_port=settings.control_reply_udp_port,
+            discovery_udp_port=settings.discovery_udp_port,
             timeout=settings.timeout,
         )
         app.state.device_lock = asyncio.Lock()
@@ -40,7 +43,7 @@ app = FastAPI(
     description=(
         "popIn Aladdin をローカル LAN から監視 / 操作する API。"
         "UPnP/DLNA MediaRenderer (再生・音量・キャスト) と"
-        "独自制御プロトコル (ライト・リモコンキー・文字入力・音声) をラップする。"
+        "独自制御プロトコル (ライト・リモコンキー・文字入力・音声・deeplink・デバイス情報・スクリーンショット) をラップする。"
     ),
     lifespan=lifespan,
 )
