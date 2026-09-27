@@ -41,12 +41,22 @@ class TcpRecorder:
 
 
 class UdpRecorder(asyncio.DatagramProtocol):
+    """受信したデータグラムを記録し、reply が設定されていれば送信元へ返す UDP サーバー。"""
+
     def __init__(self) -> None:
         self.port = 0
         self.messages: list[str] = []
+        self.reply: bytes | None = None
+        self.transport: asyncio.DatagramTransport | None = None
 
-    def datagram_received(self, data: bytes, addr: object) -> None:
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        assert isinstance(transport, asyncio.DatagramTransport)
+        self.transport = transport
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         self.messages.append(data.decode())
+        if self.reply is not None and self.transport is not None:
+            self.transport.sendto(self.reply, addr)
 
 
 @pytest.fixture
@@ -58,8 +68,7 @@ async def tcp():
         yield recorder
 
 
-@pytest.fixture
-async def udp():
+async def _udp_recorder():
     loop = asyncio.get_running_loop()
     transport, recorder = await loop.create_datagram_endpoint(
         UdpRecorder, local_addr=("127.0.0.1", 0)
@@ -71,9 +80,21 @@ async def udp():
         transport.close()
 
 
+udp = pytest.fixture(_udp_recorder, name="udp")
+cmd_udp = pytest.fixture(_udp_recorder, name="cmd_udp")
+
+
 @pytest.fixture
-def client(tcp: TcpRecorder, udp: UdpRecorder) -> RemoteClient:
-    return RemoteClient("127.0.0.1", tcp_port=tcp.port, udp_port=udp.port, timeout=2)
+def client(tcp: TcpRecorder, udp: UdpRecorder, cmd_udp: UdpRecorder) -> RemoteClient:
+    # 応答待ち受けポートは 0 (空きポート) にし、テストサーバーは送信元へ返す。
+    return RemoteClient(
+        "127.0.0.1",
+        tcp_port=tcp.port,
+        udp_port=udp.port,
+        cmd_udp_port=cmd_udp.port,
+        reply_udp_port=0,
+        timeout=2,
+    )
 
 
 async def received[T](items: list[T], count: int) -> list[T]:
@@ -131,16 +152,20 @@ async def test_hardware_key_single_press(client: RemoteClient, udp: UdpRecorder)
     ]
 
 
-async def test_maintenance_commands(client: RemoteClient, udp: UdpRecorder):
+async def test_maintenance_commands(client: RemoteClient, cmd_udp: UdpRecorder):
+    cmd_udp.reply = json.dumps(
+        {"action": 30235, "imagePath": "http://%s:7434/screenshot.png"}
+    ).encode()
     await client.free_memory()
-    await client.capture()
-    messages = [json.loads(m) for m in await received(udp.messages, 2)]
+    url = await client.screenshot()
+    messages = [json.loads(m) for m in await received(cmd_udp.messages, 2)]
     assert all(m["action"] == 20000 for m in messages)
-    assert all(m["packageName"] == "cc.popIn.aladdin" for m in messages)
+    assert all(m["msgid"] == "2" for m in messages)
     assert [m["controlCmd"] for m in messages] == [
-        {"mode": 9, "type": 2, "time": 0},
-        {"mode": 9, "type": 1, "time": 0},
+        {"mode": 9, "type": 2, "time": 0, "delayTime": 0},
+        {"mode": 9, "type": 1, "time": 0, "delayTime": 0},
     ]
+    assert url == "http://127.0.0.1:7434/screenshot.png"
 
 
 async def test_closed_tcp_port_is_connection_error():

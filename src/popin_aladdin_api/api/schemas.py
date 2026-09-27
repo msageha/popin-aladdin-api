@@ -77,15 +77,32 @@ class LightRequest(BaseModel):
 
 class KeyRequest(BaseModel):
     button: ProjectorKey = Field(
-        description="方向キー (up / down / left / right / ok / home) "
-        "またはハードキー (back / menu / vol_up / vol_down / power)",
-        examples=["down", "ok", "back"],
+        description="方向キー (up / down / left / right / ok / home)、フォーカス調整 "
+        "(focus_plus / focus_minus)、長押し (home_long / menu_long)、ハードキー "
+        "(back / menu / vol_up / vol_down / power / settings / netflix / youtube / "
+        "prime_video / custom / custom_long)",
+        examples=["down", "ok", "back", "youtube"],
     )
     repeat: int = Field(default=1, ge=1, le=50, description="押す回数")
 
 
 class TextRequest(BaseModel):
     text: str = Field(description="送信する文字列", examples=["hello world"])
+
+
+class DeeplinkRequest(BaseModel):
+    url: str = Field(
+        min_length=1,
+        description="デバイスで開く deeplink (アプリの URL scheme / intent URL)",
+        examples=["https://www.youtube.com/tv", "tver://"],
+    )
+
+
+class PowerOffRequest(BaseModel):
+    confirm: bool = Field(
+        default=False,
+        description="電源を切るには true が必須。切った後はこの API から再点灯できない",
+    )
 
 
 class SoapRequest(BaseModel):
