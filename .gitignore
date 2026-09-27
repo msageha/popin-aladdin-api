@@ -44,7 +44,6 @@ coverage.xml
 tmp/
 .tmp/
 *.bak
-scripts/_probe.json
 
 # uv.lock IS committed; only its caches are ignored.
 
