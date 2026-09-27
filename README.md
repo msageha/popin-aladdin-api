@@ -223,22 +223,6 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
 major 以外の更新は 1 つの PR に集約し、minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
 Renovate 自身が自動マージします (`platformAutomerge: false`)。major は個別 PR で人手レビューします。
 
-### Claude Code
-
-- `.github/workflows/claude.yaml`: issue / PR コメント等の `@claude` メンション (OWNER / MEMBER のみ) で
-  [claude-code-action](https://github.com/anthropics/claude-code-action) を起動します。
-- `.github/workflows/claude-sweep.yaml`: 毎週月曜に、前回レビュー済み地点 (tag `claude-reviewed`) から HEAD までの差分を
-  correctness / security / simplification の観点でレビューし、新規の指摘を `claude-sweep` label 付きの issue として
-  起票します。修正 PR は作りません。tag が無い初回は tag を張るだけで終了し、`workflow_dispatch` で手動実行できます。
-
-実行には secret `CLAUDE_CODE_OAUTH_TOKEN` が必要です。未設定のまま workflow が動くと
-`CLAUDE_CODE_OAUTH_TOKEN ... is required` で失敗します。
-
-```sh
-claude setup-token   # Claude Code の OAuth トークンを発行
-gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo msageha/popin-aladdin-api
-```
-
 ### GitHub リポジトリ設定
 
 ファイルとして管理できないリポジトリ設定です。public リポジトリなので ruleset と secret scanning が使えます。
@@ -309,11 +293,7 @@ gh api -X PUT "repos/$REPO/actions/permissions" --input - <<'JSON'
 {"enabled": true, "allowed_actions": "selected", "sha_pinning_required": true}
 JSON
 gh api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JSON'
-{
-  "github_owned_allowed": true,
-  "verified_allowed": true,
-  "patterns_allowed": ["jdx/mise-action@*", "anthropics/claude-code-action@*"]
-}
+{"github_owned_allowed": true, "verified_allowed": true, "patterns_allowed": ["jdx/mise-action@*"]}
 JSON
 
 # Dependabot alerts (脆弱性の通知のみ。更新 PR は Renovate が出すので security updates は有効化しない)
@@ -322,7 +302,8 @@ gh api -X PUT "repos/$REPO/vulnerability-alerts"
 
 ### template との同期
 
-開発ツール・CI・GitHub 設定ファイルは [dope-corp/template](https://github.com/dope-corp/template) に由来します。
+開発ツール・CI・GitHub 設定ファイルは [dope-corp/template](https://github.com/dope-corp/template) に由来します
+(template の `claude.yaml` / `claude-sweep.yaml` は、このリポジトリで GitHub 経由の Claude Code を使わないため取り込んでいません)。
 template 側で入った更新は自動では届かないため、`mise run template-diff` で共通ファイルを template の main と比較して
 unified diff を表示します。差分にはこのリポジトリ固有の変更 (Python 向けの hook・`verify` job 等) も混ざるので、
 取り込むものは手で選んでください。
