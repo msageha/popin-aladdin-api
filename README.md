@@ -1,5 +1,7 @@
 # popIn Aladdin API
 
+[![CI](https://github.com/msageha/popin-aladdin-api/actions/workflows/ci.yaml/badge.svg?event=pull_request)](https://github.com/msageha/popin-aladdin-api/actions/workflows/ci.yaml)
+
 天井照明付きプロジェクター **popIn Aladdin** (実機の UPnP フレンドリ名は `Aladdin 2`) を、
 クラウドを介さず同一 LAN から操作する REST サーバーです。FastAPI + pydantic で
 次の 2 系統の制御面をラップします。
@@ -12,25 +14,31 @@
 
 ## セットアップ
 
+[mise](https://mise.jdx.dev/) の利用を前提としています。
+
 ```bash
-make setup        # uv sync
+mise trust    # 初回のみ: このディレクトリの mise.toml を信頼する
+mise install  # tools をインストールし、git hooks (prek) を登録する
 ```
+
+Python 本体 (`.python-version` の 3.14) と `.venv` は、最初の `uv run` (`mise run dev` / `mise run test` 等) で uv が
+`uv.lock` どおりに用意します。
 
 接続先を変えるときはリポジトリ直下に `.env` を作って指定します。全て省略可で、既定値は次のとおりです。
 
-| 変数                 | 既定値                | 説明                                                   |
-| -------------------- | --------------------- | ------------------------------------------------------ |
+| 変数                 | 既定値                | 説明                                                  |
+| -------------------- | --------------------- | ----------------------------------------------------- |
 | `POPIN_ALADDIN_HOST` | `http://172.16.1.113` | デバイスの URL またはホスト名 / IP (ポートは含めない) |
-| `UPNP_PORT`          | `1481`                | UPnP/DLNA MediaRenderer のポート                       |
-| `DESCRIPTION_PATH`   | `/`                   | UPnP device description のパス                         |
-| `CONTROL_TCP_PORT`   | `30913`               | 独自プロトコル TCP (ライト・文字入力・音声)            |
-| `CONTROL_UDP_PORT`   | `16735`               | 独自プロトコル UDP (方向キー・ハードキー・保守)        |
-| `TIMEOUT`            | `10`                  | デバイスへの各リクエストのタイムアウト (秒)            |
+| `UPNP_PORT`          | `1481`                | UPnP/DLNA MediaRenderer のポート                      |
+| `DESCRIPTION_PATH`   | `/`                   | UPnP device description のパス                        |
+| `CONTROL_TCP_PORT`   | `30913`               | 独自プロトコル TCP (ライト・文字入力・音声)           |
+| `CONTROL_UDP_PORT`   | `16735`               | 独自プロトコル UDP (方向キー・ハードキー・保守)       |
+| `TIMEOUT`            | `10`                  | デバイスへの各リクエストのタイムアウト (秒)           |
 
 ## 起動
 
 ```bash
-make run          # uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000
+mise run dev      # uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Swagger UI: http://127.0.0.1:8000/docs
@@ -38,8 +46,8 @@ Swagger UI: http://127.0.0.1:8000/docs
 ### Docker
 
 ```bash
-make build-image  # docker build -t popin-aladdin-api:latest .
-make run-image    # docker run --rm -p 8000:8000 [--env-file .env] popin-aladdin-api:latest
+mise run build-image  # docker build -t popin-aladdin-api:latest .
+mise run run-image    # docker run --rm -p 8000:8000 [--env-file .env] popin-aladdin-api:latest
 ```
 
 `.env` があれば `--env-file` でコンテナに渡します。
@@ -51,47 +59,47 @@ make run-image    # docker run --rm -p 8000:8000 [--env-file .env] popin-aladdin
 
 パスの接頭辞は `/api` です。
 
-| Method | Path                  | 説明                                                         |
-| ------ | --------------------- | ------------------------------------------------------------ |
-| GET    | `/api/health`         | サーバー状態と接続先 (デバイスには触れない)                  |
-| GET    | `/api/info`           | デバイス情報 (friendly_name / model / UDN / services)        |
-| GET    | `/api/status`         | 集約状態 (state / volume / mute / 現在 URI / 位置)           |
-| GET    | `/api/transport`      | 再生状態 (state / status / speed)                            |
-| GET    | `/api/position`       | 再生位置・トラック情報                                       |
-| GET    | `/api/media`          | 現在のメディア情報 (URI / duration)                          |
-| GET    | `/api/protocol-info`  | 対応プロトコル (source / sink)                               |
-| GET    | `/api/volume`         | 音量取得                                                     |
-| POST   | `/api/volume`         | 音量設定 (`volume`: 0..100)                                  |
-| GET    | `/api/mute`           | ミュート状態取得                                             |
-| POST   | `/api/mute`           | ミュート設定 (`mute`)                                        |
-| POST   | `/api/play`           | 再生 (任意で `speed`)                                        |
-| POST   | `/api/pause`          | 一時停止                                                     |
-| POST   | `/api/stop`           | 停止                                                         |
-| POST   | `/api/next`           | 次のトラック                                                 |
-| POST   | `/api/previous`       | 前のトラック                                                 |
-| POST   | `/api/seek`           | シーク (`seconds`)                                           |
-| POST   | `/api/play-mode`      | 再生モード設定 (`mode`)                                      |
-| POST   | `/api/cast`           | 任意メディア URL を読み込んで再生 (`uri` ほか)               |
-| GET    | `/api/remote/buttons` | 利用できるボタン名一覧 (light / key / key_stateless)         |
-| POST   | `/api/remote/ping`    | 独自プロトコル (TCP) の疎通確認                              |
-| POST   | `/api/light`          | シーリングライト操作 (`button` + `repeat`)                   |
-| POST   | `/api/key`            | 方向キー / ハードキー入力 (`button` + `repeat`)              |
-| POST   | `/api/keyboard`       | オンスクリーンキーボードへ文字入力 (`text`)                  |
-| POST   | `/api/voice`          | 音声コマンドをテキストとして送信 (`text`)                    |
-| POST   | `/api/memory/free`    | バックグラウンドアプリのメモリ解放                           |
-| POST   | `/api/capture`        | デバイスの capture コマンド送信                              |
+| Method | Path                  | 説明                                                                   |
+| ------ | --------------------- | ---------------------------------------------------------------------- |
+| GET    | `/api/health`         | サーバー状態と接続先 (デバイスには触れない)                            |
+| GET    | `/api/info`           | デバイス情報 (friendly_name / model / UDN / services)                  |
+| GET    | `/api/status`         | 集約状態 (state / volume / mute / 現在 URI / 位置)                     |
+| GET    | `/api/transport`      | 再生状態 (state / status / speed)                                      |
+| GET    | `/api/position`       | 再生位置・トラック情報                                                 |
+| GET    | `/api/media`          | 現在のメディア情報 (URI / duration)                                    |
+| GET    | `/api/protocol-info`  | 対応プロトコル (source / sink)                                         |
+| GET    | `/api/volume`         | 音量取得                                                               |
+| POST   | `/api/volume`         | 音量設定 (`volume`: 0..100)                                            |
+| GET    | `/api/mute`           | ミュート状態取得                                                       |
+| POST   | `/api/mute`           | ミュート設定 (`mute`)                                                  |
+| POST   | `/api/play`           | 再生 (任意で `speed`)                                                  |
+| POST   | `/api/pause`          | 一時停止                                                               |
+| POST   | `/api/stop`           | 停止                                                                   |
+| POST   | `/api/next`           | 次のトラック                                                           |
+| POST   | `/api/previous`       | 前のトラック                                                           |
+| POST   | `/api/seek`           | シーク (`seconds`)                                                     |
+| POST   | `/api/play-mode`      | 再生モード設定 (`mode`)                                                |
+| POST   | `/api/cast`           | 任意メディア URL を読み込んで再生 (`uri` ほか)                         |
+| GET    | `/api/remote/buttons` | 利用できるボタン名一覧 (light / key / key_stateless)                   |
+| POST   | `/api/remote/ping`    | 独自プロトコル (TCP) の疎通確認                                        |
+| POST   | `/api/light`          | シーリングライト操作 (`button` + `repeat`)                             |
+| POST   | `/api/key`            | 方向キー / ハードキー入力 (`button` + `repeat`)                        |
+| POST   | `/api/keyboard`       | オンスクリーンキーボードへ文字入力 (`text`)                            |
+| POST   | `/api/voice`          | 音声コマンドをテキストとして送信 (`text`)                              |
+| POST   | `/api/memory/free`    | バックグラウンドアプリのメモリ解放                                     |
+| POST   | `/api/capture`        | デバイスの capture コマンド送信                                        |
 | POST   | `/api/soap`           | 任意 SOAP アクションのパススルー (状態を変えうるものは `confirm` 必須) |
 
 リクエスト / レスポンスの全スキーマは Swagger UI で確認できます。
 
 ### エラー
 
-| Status | 意味                                                                          |
-| ------ | ----------------------------------------------------------------------------- |
-| 400    | `/api/soap` で状態を変えうるアクションに `confirm: true` が無い              |
-| 422    | リクエスト body の検証エラー (未知のボタン名・範囲外の音量など)               |
+| Status | 意味                                                                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `/api/soap` で状態を変えうるアクションに `confirm: true` が無い                                                                                       |
+| 422    | リクエスト body の検証エラー (未知のボタン名・範囲外の音量など)                                                                                       |
 | 502    | デバイスが SOAP fault や想定外の応答を返した。SOAP fault なら body に `fault_code` (SOAP faultcode) と `upnp_error_code` (UPnPError errorCode) を含む |
-| 504    | デバイスにネットワーク的に到達できない (接続拒否・タイムアウト)               |
+| 504    | デバイスにネットワーク的に到達できない (接続拒否・タイムアウト)                                                                                       |
 
 ### 使用例
 
@@ -143,18 +151,162 @@ curl -X POST http://127.0.0.1:8000/api/soap \
 
 ## 開発
 
-ruff (lint + formatter)、ty (型チェック)、pytest、pre-commit を使います。
+ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / gitleaks / fnox) は `mise.toml` の `[tools]` で
+exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。CI (`ci.yaml`) も
+ローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。`[tools]` を手で変更したら
+`mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の
+`mise install --locked` が失敗します)。Python 本体は mise ではなく uv が `.python-version` (3.14) に従って取得します。
+[fnox](https://fnox.jdx.dev/) は暗号化ファイル・パスワードマネージャ等から secret を読み込んで環境変数として
+コマンドに渡す secret manager で、`fnox.toml` はその daemon (解決済み secret のメモリキャッシュ。12h 無操作で終了) の
+設定です。この API 自体に secret は無く、template との共通設定として置いています。
 
 ```bash
-make format              # ruff format
-make lint                # ruff format --check + ruff check + ty check (CI 相当)
-make test                # coverage run -m pytest + report
-make precommit-install   # フックを git に登録
-make precommit           # 全ファイルに対して実行
+mise run format                     # ruff format
+mise run lint                       # ruff format --check + ruff check + ty check
+mise run test                       # coverage run -m pytest + report
+mise exec -- prek run --all-files   # pre-commit hooks を全ファイルに対して実行する (CI の prek job と同じ)
 ```
 
 テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで
 プロトコルを検証します。
+
+### pre-commit hooks
+
+`mise install` の `postinstall` hook で `prek install` が実行され、`.git/hooks/pre-commit` と
+`.git/hooks/commit-msg` が登録されます。`.pre-commit-config.yaml` の hook 構成が変わったあとの既存 clone では
+`mise exec -- prek install` を再実行してください。以前 pre-commit (Python package。旧 `make precommit-install`) で
+hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/pre-commit.legacy` として残して呼び続け、
+`pre-commit` が `.venv` から消えた後は commit が失敗します。`mise exec -- prek install --force` で置き換えてください
+(prek 以外の hook を自分で置いている場合は `.git/hooks/*.legacy` の中身を確認してから)。
+
+- [ruff](https://docs.astral.sh/ruff/) (format + lint) と [ty](https://docs.astral.sh/ty/) (型チェック) は
+  `uv run --locked` で `uv.lock` のバージョンを使い、pre-commit 側と二重管理しません。`uv.lock` が
+  `pyproject.toml` に追従していないと hook (と CI) がここで失敗します。
+- [dprint](https://dprint.dev/): json / markdown / toml / yaml のフォーマッタ。plugin の WASM URL は
+  `dprint.json` に `url@sha256` の checksum 付きで pin します。
+- [actionlint](https://github.com/rhysd/actionlint): workflow の静的検査。`run:` スクリプトの検査に
+  [shellcheck](https://github.com/koalaman/shellcheck) を使います。
+- [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。
+- [gitleaks](https://github.com/gitleaks/gitleaks): シークレットスキャン。pre-commit hook が staged 差分を、
+  CI の `gitleaks` job がコミット履歴全体を対象にします。
+- [commitlint](https://commitlint.js.org/): commit message を
+  [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`) で検査する commit-msg hook。
+  ルールは `commitlint.config.mjs`。prek が node を自前で用意するため、リポジトリに node は不要です。
+
+`.gitignore` はホワイトリスト方式 (`*` で全て無視し、`!` で許可したものだけを追跡する) です。
+新しく追跡したいファイルを追加する場合は、対応する `!` の行を追記してください。
+
+### CI
+
+`.github/workflows/ci.yaml` は pull request 時に以下の job を並列実行します。job 名がそのまま
+required status check の名前になります。
+
+- `prek`: `mise.lock` 通りのツールで `.pre-commit-config.yaml` の全 hook を `prek run --all-files` で実行する。
+- `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
+- `verify`: `uv run --locked pytest` でテストを実行する。
+
+main への push では実行しません (main は PR 必須で、変更は PR の CI で検証してから merge します)。
+workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョンをコメントで併記します。
+
+### 依存関係の更新 (Renovate)
+
+`renovate.json` で以下を [Renovate](https://docs.renovatebot.com/) に任せます。Renovate GitHub App をこの
+リポジトリに対して有効化しておく必要があります。
+
+- `pyproject.toml` の依存と `uv.lock` (範囲内の更新は `lockFileMaintenance` の週次再解決で追従する)。
+- `mise.toml` のバージョン bump と、それに伴う `mise.lock` の更新 (同じ PR で行われる)。
+- `.pre-commit-config.yaml` の hook `rev` と、`language: node` の hook の `additional_dependencies`。
+- workflow の `uses:` の commit SHA と、`dprint.json` の plugin URL / checksum。
+- `Dockerfile` のベースイメージ (runner の `python:*` のみ。builder の `uv:python3.14-*` は tag を解釈できず対象外なので、
+  両者がずれないよう docker datasource の更新は automerge せず人手で揃える)。
+
+major 以外の更新は 1 つの PR に集約し、minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
+Renovate 自身が自動マージします (`platformAutomerge: false`)。major は個別 PR で人手レビューします。
+
+### GitHub リポジトリ設定
+
+ファイルとして管理できないリポジトリ設定です。public リポジトリなので ruleset と secret scanning が使えます。
+required checks は `ci.yaml` の job 名 (`prek` / `gitleaks` / `verify`) に合わせます。
+
+```sh
+REPO=msageha/popin-aladdin-api
+
+# merge 方式: squash のみ / squash タイトルは COMMIT_OR_PR_TITLE / merge 後にブランチ自動削除 / wiki off
+gh api -X PATCH "repos/$REPO" --input - <<'JSON'
+{
+  "allow_merge_commit": false,
+  "allow_rebase_merge": false,
+  "allow_squash_merge": true,
+  "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+  "squash_merge_commit_message": "COMMIT_MESSAGES",
+  "delete_branch_on_merge": true,
+  "has_wiki": false
+}
+JSON
+
+# main を PR 必須・CI green 必須・squash merge 限定・force push / 削除禁止・linear history にする
+gh api -X POST "repos/$REPO/rulesets" --input - <<'JSON'
+{
+  "name": "Protect main",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {"type": "required_linear_history"},
+    {"type": "pull_request", "parameters": {
+      "required_approving_review_count": 0,
+      "dismiss_stale_reviews_on_push": false,
+      "require_code_owner_review": false,
+      "require_last_push_approval": false,
+      "required_review_thread_resolution": false,
+      "allowed_merge_methods": ["squash"]
+    }},
+    {"type": "required_status_checks", "parameters": {
+      "do_not_enforce_on_create": false,
+      "strict_required_status_checks_policy": false,
+      "required_status_checks": [
+        {"context": "prek", "integration_id": 15368},
+        {"context": "gitleaks", "integration_id": 15368},
+        {"context": "verify", "integration_id": 15368}
+      ]
+    }}
+  ]
+}
+JSON
+
+# secret scanning: push protection に加え、non-provider patterns も有効化する
+gh api -X PATCH "repos/$REPO" --input - <<'JSON'
+{
+  "security_and_analysis": {
+    "secret_scanning": {"status": "enabled"},
+    "secret_scanning_push_protection": {"status": "enabled"},
+    "secret_scanning_non_provider_patterns": {"status": "enabled"}
+  }
+}
+JSON
+
+# Actions: GitHub 公式 / verified creator と、workflow が使う action だけを許可し、SHA pin を必須にする
+gh api -X PUT "repos/$REPO/actions/permissions" --input - <<'JSON'
+{"enabled": true, "allowed_actions": "selected", "sha_pinning_required": true}
+JSON
+gh api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JSON'
+{"github_owned_allowed": true, "verified_allowed": true, "patterns_allowed": ["jdx/mise-action@*"]}
+JSON
+
+# Dependabot alerts (脆弱性の通知のみ。更新 PR は Renovate が出すので security updates は有効化しない)
+gh api -X PUT "repos/$REPO/vulnerability-alerts"
+```
+
+### template との同期
+
+開発ツール・CI・GitHub 設定ファイルは [dope-corp/template](https://github.com/dope-corp/template) に由来します
+(template の `claude.yaml` / `claude-sweep.yaml` は、このリポジトリで GitHub 経由の Claude Code を使わないため取り込んでいません)。
+template 側で入った更新は自動では届かないため、`mise run template-diff` で共通ファイルを template の main と比較して
+unified diff を表示します。差分にはこのリポジトリ固有の変更 (Python 向けの hook・`verify` job 等) も混ざるので、
+取り込むものは手で選んでください。
 
 ## 構成
 
@@ -217,11 +369,11 @@ POST http://<host>:1481/<Service>/<UDN>/control.xml   … SOAP コントロー�
 device description から各サービスの `controlURL` を解決し、SOAP でアクションを
 呼びます。公開サービスは次の 3 つです。
 
-| サービス              | 主なアクション                                                                                                              |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| サービス              | 主なアクション                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **AVTransport**       | GetTransportInfo / GetPositionInfo / GetMediaInfo / Play / Pause / Stop / Next / Previous / Seek / SetAVTransportURI / SetPlayMode |
-| **RenderingControl**  | GetVolume / SetVolume (0..100) / GetMute / SetMute                                                                          |
-| **ConnectionManager** | GetProtocolInfo                                                                                                             |
+| **RenderingControl**  | GetVolume / SetVolume (0..100) / GetMute / SetMute                                                                                 |
+| **ConnectionManager** | GetProtocolInfo                                                                                                                    |
 
 ### 独自プロトコル (popIn/MAXHUB)
 
@@ -231,8 +383,8 @@ popIn Aladdin は内部的に MAXHUB (CVTE) のモバイル制御プロトコル
 [kmaehashi/popin-aladdin-light](https://github.com/kmaehashi/popin-aladdin-light)
 (MIT) の解析に基づきます。
 
-- **TCP 30913**: 6 バイトヘッダ `struct '<IBB'` (uint32 ペイロード長 + uint8 `op1`
-  + uint8 `op2`) + JSON ペイロード。
+- **TCP 30913**: 6 バイトヘッダ `struct '<IBB'` (uint32 ペイロード長 + uint8 `op1` +
+  uint8 `op2`) + JSON ペイロード。
   - ライト: `op1=1, op2=7, {"action": <code>}` (switch=31, brighter=32, darker=33,
     cooler=34, warmer=35, full=36, night=37, on=38, off=39, eco=40, sleep=41)
   - 文字入力: `op1=1, op2=10, {"text": "..."}`
@@ -268,3 +420,66 @@ popIn Aladdin は内部的に MAXHUB (CVTE) のモバイル制御プロトコル
 ## ライセンス / License
 
 [MIT](LICENSE)
+
+## タスク
+
+タスクは `mise run <task>` で実行します。`mise.toml` の `[tasks]` を変更した場合は
+`mise run docs` を実行し、以下の一覧を更新します (pre-commit hook からも自動実行されます)。
+
+<!-- dprint-ignore-start -->
+<!-- mise-tasks -->
+## `build-image`
+
+- **Usage:** `build-image`
+
+Build the Docker image popin-aladdin-api:latest
+
+## `clean`
+
+- **Usage:** `clean`
+
+Remove caches and coverage artifacts
+
+## `dev`
+
+- **Usage:** `dev`
+
+Run the API server with auto-reload on http://127.0.0.1:8000
+
+## `docs`
+
+- **Usage:** `docs`
+
+Sync the task list embedded in README.md with mise.toml
+
+## `format`
+
+- **Usage:** `format`
+
+Format python sources with ruff
+
+## `lint`
+
+- **Usage:** `lint`
+
+Check formatting (ruff format --check), lint (ruff check) and types (ty check)
+
+## `run-image`
+
+- **Usage:** `run-image`
+
+Run the Docker image on port 8000 (passes .env with --env-file if present)
+
+## `template-diff`
+
+- **Usage:** `template-diff`
+
+Diff shared files against dope-corp/template main
+
+## `test`
+
+- **Usage:** `test`
+
+Run pytest under coverage and print the report
+<!-- /mise-tasks -->
+<!-- dprint-ignore-end -->

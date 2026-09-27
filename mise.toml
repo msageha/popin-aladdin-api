@@ -1,0 +1,111 @@
+# ツールのバージョンは Renovate (mise manager) が bump し、mise.lock も同じ PR で更新する。
+# latest 指定にしない。手で変更したときは `mise lock` を実行して mise.lock を追従させる。
+# Python 本体は mise ではなく uv が管理する (.python-version の 3.14 を取得する)。
+[tools]
+uv = "0.12.13"
+prek = "0.5.3"
+actionlint = "1.7.12"
+dprint = "0.57.4"
+fnox = "v1.35.2"
+gitleaks = "8.30.1"
+hadolint = "2.15.1"
+# actionlint は PATH に shellcheck があるときだけ run: スクリプトを検査するため、
+# ローカルと CI で検査内容が変わらないように pin する
+shellcheck = "0.11.0"
+
+[env]
+# 接続先 (POPIN_ALADDIN_HOST 等) はリポジトリ直下の .env かここで定義する。ローカルだけの値は
+# mise.local.toml に書くと上書きできる (ホワイトリスト方式の .gitignore により追跡されない)。
+#
+# 例:
+# POPIN_ALADDIN_HOST = "http://192.168.1.20"
+# _.file = ".env"  # .env ファイルを読み込む
+
+[tasks.dev]
+description = "Run the API server with auto-reload on http://127.0.0.1:8000"
+run = "uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000"
+
+[tasks.test]
+description = "Run pytest under coverage and print the report"
+run = [
+  "uv run coverage run -m pytest",
+  "uv run coverage report",
+]
+
+[tasks.lint]
+description = "Check formatting (ruff format --check), lint (ruff check) and types (ty check)"
+run = [
+  "uv run ruff format --check .",
+  "uv run ruff check .",
+  "uv run ty check",
+]
+
+[tasks.format]
+description = "Format python sources with ruff"
+run = "uv run ruff format ."
+
+[tasks.build-image]
+description = "Build the Docker image popin-aladdin-api:latest"
+run = "docker build -t popin-aladdin-api:latest ."
+
+[tasks.run-image]
+description = "Run the Docker image on port 8000 (passes .env with --env-file if present)"
+run = "docker run --rm -p 8000:8000 $([ -f .env ] && echo --env-file .env) popin-aladdin-api:latest"
+
+[tasks.clean]
+description = "Remove caches and coverage artifacts"
+run = [
+  "find . -path ./.venv -prune -o -name '__pycache__' -type d -prune -exec rm -r {} +",
+  "rm -rf .pytest_cache .ruff_cache .ty_cache htmlcov .coverage",
+]
+
+[tasks.docs]
+description = "Sync the task list embedded in README.md with mise.toml"
+run = "mise generate task-docs --inject --output README.md"
+
+# template から生成したリポジトリで実行し、共通ファイルが template の main からどれだけ離れたかを見る。
+# README.md / CODEOWNERS / CLAUDE.md / mise.lock はリポジトリ固有に書き換える前提なので対象外。
+# claude.yaml / claude-sweep.yaml は GitHub 経由で Claude を使わないため取り込んでおらず、対象外。
+[tasks.template-diff]
+description = "Diff shared files against dope-corp/template main"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+repo="dope-corp/template"
+files=(
+  .editorconfig .gitattributes .gitignore .pre-commit-config.yaml commitlint.config.mjs
+  dprint.json fnox.toml mise.toml renovate.json
+  .github/PULL_REQUEST_TEMPLATE.md
+  .github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug_report.yaml .github/ISSUE_TEMPLATE/feature_request.yaml
+  .github/workflows/ci.yaml
+)
+err="$(mktemp)"
+trap 'rm -f "${err}"' EXIT
+failed=0
+for f in "${files[@]}"; do
+  if ! upstream="$(gh api "repos/${repo}/contents/${f}" -H 'Accept: application/vnd.github.raw+json' 2>"${err}")"; then
+    # 404 は template 側に無いファイル (skip)。それ以外 (未認証・通信障害・rate limit) は比較できていないので失敗にする
+    if grep -q 'HTTP 404' "${err}"; then
+      echo "!! ${f}: not in ${repo} main (skipped)"
+    else
+      echo "!! ${f}: fetch failed: $(cat "${err}")" >&2
+      failed=1
+    fi
+    continue
+  fi
+  if [[ ! -f "${f}" ]]; then
+    echo "!! ${f}: missing locally"
+    continue
+  fi
+  diff -u --label "template/${f}" --label "${f}" <(printf '%s\n' "${upstream}") "${f}" || true
+done
+exit "${failed}"
+'''
+
+[hooks]
+# .venv はここでは作らない: uv sync が古い uv.lock を書き換えると CI の `uv run --locked` が不整合を検出できなくなる。
+# .venv は最初の `uv run --locked` (mise run test / prek の hook) が uv.lock どおりに作る
+postinstall = "prek install"
+
+[settings]
+lockfile = true

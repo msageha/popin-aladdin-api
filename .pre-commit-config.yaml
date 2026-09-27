@@ -1,38 +1,77 @@
+# commit-msg stage の commitlint を動かすため、pre-commit に加えて commit-msg hook も導入する
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+# stages 未指定の hook は導入した全 hook type で走るため、pre-commit stage に限定して
+# commit-msg stage での二重実行を避ける (commitlint だけが stages: [commit-msg] を持つ)
+default_stages:
+  - pre-commit
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      - id: check-added-large-files
-        exclude: 'uv\.lock$'
-      - id: check-yaml
-      - id: check-toml
-      - id: check-merge-conflict
-      - id: detect-private-key
-      - id: end-of-file-fixer
       - id: trailing-whitespace
-
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.13.1
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
     hooks:
-      - id: hadolint-docker
-        stages: [manual]
-
-  # ruff / ty は uv.lock のバージョンで実行し、pre-commit 側と二重管理しない。
+      - id: actionlint-system
   - repo: local
     hooks:
-      - id: ruff-format
-        name: ruff format
-        entry: uv run --locked ruff format
+      - id: mise-task-docs
+        name: Sync task docs into README.md
         language: system
+        entry: mise run docs
+        files: ^mise\.toml$
+        pass_filenames: false
+      - id: dprint-fmt
+        name: Format json/yaml/markdown/toml with dprint
+        language: system
+        # --allow-no-files: 渡されたファイルがすべて dprint.json の excludes 対象のとき
+        # (例: uv.lock のみの commit) に exit 14 (No files found) で失敗しないようにする
+        entry: mise exec -- dprint fmt --allow-no-files
+        types_or: [json, yaml, markdown, toml]
+      - id: hadolint
+        name: Lint Dockerfile with hadolint
+        language: system
+        entry: mise exec -- hadolint
+        files: (^|/)([^/]+\.)?Dockerfile(\.[^/]+)?$
+      # ruff / ty は uv.lock のバージョンで実行し、pre-commit 側と二重管理しない。
+      # mise exec 経由にして、mise.toml で pin した uv を hook からも使う
+      - id: ruff-format
+        name: Format python with ruff
+        language: system
+        entry: mise exec -- uv run --locked ruff format
         types: [python]
       - id: ruff-check
-        name: ruff check
-        entry: uv run --locked ruff check --fix
+        name: Lint python with ruff
         language: system
+        entry: mise exec -- uv run --locked ruff check --fix
         types: [python]
       - id: ty
-        name: ty check
-        entry: uv run --locked ty check
+        name: Type-check python with ty
         language: system
+        entry: mise exec -- uv run --locked ty check
         types: [python]
         pass_filenames: false
+      # staged 差分だけを対象にした secret スキャン。CI の gitleaks job (全履歴) は commit 後の検知なので、
+      # commit 前に止める役割はこの hook が担う
+      - id: gitleaks
+        name: Scan staged changes for secrets with gitleaks
+        language: system
+        entry: mise exec -- gitleaks git --pre-commit --redact --staged --verbose
+        pass_filenames: false
+      - id: commitlint
+        name: Lint commit message with commitlint
+        # language: node により prek が node と依存を隔離環境へ自前インストールするため、リポジトリに node は不要
+        language: node
+        additional_dependencies:
+          ["@commitlint/cli@21.2.3", "@commitlint/config-conventional@21.2.3"]
+        entry: commitlint --edit
+        stages: [commit-msg]

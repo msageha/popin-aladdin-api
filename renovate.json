@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Asia/Tokyo",
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "pre-commit": {
+    "enabled": true
+  },
+  "minimumReleaseAge": "7 days",
+  "platformAutomerge": false,
+  "packageRules": [
+    {
+      "description": "PR の乱立を防ぐため、major 以外 (minor/patch/pin/digest) の更新は manager・エコシステム横断で 1 つの PR に集約する。major はグルーピングせず個別 PR で人手レビューする",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "patch/minor は minimumReleaseAge (7日) 経過後、CI green を条件に自動マージする。merge は Renovate 自身が全 status check の成功を確認して行う (platformAutomerge: false)。GitHub の auto-merge は required status check の無いリポジトリでは CI 完了を待たずに merge するため使わない。major は供給網攻撃対策の猶予期間だけでは不十分なため対象外とし、人手レビューを必須とする",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Dockerfile のベースイメージ (docker datasource) は automerge しない。builder (uv:python3.14-*) の tag は docker versioning で解釈できず Renovate が触れないため、runner (python:3.14-*) だけが 3.15 へ minor 更新されると builder で作った .venv が runner で動かなくなる。automerge 対象外の更新が混ざると group 全体が automerge されなくなるため通常 group からも分離する",
+      "matchDatasources": ["docker"],
+      "groupName": "docker base images",
+      "groupSlug": "docker-base-images",
+      "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "dprint.json の公式プラグイン (dprint/dprint-plugin-*) の WASM URL を更新する。@ 以降の sha256 checksum は github-release-attachments datasource が release asset (plugin.wasm) の実ハッシュ照合で追従させる",
+      "managerFilePatterns": ["/(^|/)dprint\\.json$/"],
+      "matchStrings": [
+        "https://plugins\\.dprint\\.dev/(?<depName>[a-z0-9-]+)-(?<currentValue>\\d+\\.\\d+\\.\\d+)\\.wasm(?:@(?<currentDigest>[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "github-release-attachments",
+      "packageNameTemplate": "dprint/dprint-plugin-{{depName}}",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "dprint.json の g-plane プラグインの WASM URL を更新する (tag は v prefix 付きなので currentValue に含めて照合する)",
+      "managerFilePatterns": ["/(^|/)dprint\\.json$/"],
+      "matchStrings": [
+        "https://plugins\\.dprint\\.dev/g-plane/(?<depName>[a-z0-9_-]+)-(?<currentValue>v\\d+\\.\\d+\\.\\d+)\\.wasm(?:@(?<currentDigest>[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "github-release-attachments",
+      "packageNameTemplate": "g-plane/{{depName}}",
+      "versioningTemplate": "semver"
+    }
+  ]
+}
