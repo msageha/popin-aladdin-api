@@ -1,18 +1,18 @@
+from xml.etree import ElementTree as ET
+
 import pytest
 
-from aladdin.soap import (
+from popin_aladdin_api.device.errors import AladdinError, AladdinSoapError
+from popin_aladdin_api.device.upnp import (
     build_didl_metadata,
     build_envelope,
     format_duration,
     parse_device_description,
     parse_duration,
-    parse_soap_response,
+    parse_response,
 )
 
-pytestmark = pytest.mark.unit
-
-
-# A trimmed copy of the real "Aladdin 2" device description (port 1481).
+# 実機 "Aladdin 2" (port 1481) の device description を短くしたもの。
 DESCRIPTION_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <root configId="258119" xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
@@ -67,53 +67,65 @@ def test_build_envelope_escapes_and_wraps():
     body = build_envelope(
         "urn:schemas-upnp-org:service:AVTransport:1",
         "SetAVTransportURI",
-        {"InstanceID": 0, "CurrentURI": "http://h/a&b.mp4"},
+        {"InstanceID": 0, "CurrentURI": "http://h/a&b.mp4", "Empty": None},
     )
-    assert "<u:SetAVTransportURI " in body
-    assert 'xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"' in body
-    assert "<CurrentURI>http://h/a&amp;b.mp4</CurrentURI>" in body
     assert body.startswith("<?xml")
+    assert 'xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"' in body
+    assert "<InstanceID>0</InstanceID>" in body
+    assert "<CurrentURI>http://h/a&amp;b.mp4</CurrentURI>" in body
+    assert "<Empty></Empty>" in body
 
 
-def test_parse_soap_response_extracts_args():
-    out = parse_soap_response(GET_VOLUME_RESPONSE, "GetVolume")
-    assert out == {"CurrentVolume": "35"}
+def test_parse_response_extracts_args():
+    assert parse_response(GET_VOLUME_RESPONSE, "GetVolume") == {"CurrentVolume": "35"}
 
 
-def test_parse_soap_response_raises_on_fault():
-    with pytest.raises(ValueError) as exc:
-        parse_soap_response(FAULT_RESPONSE, "SetVolume")
-    assert "402" in str(exc.value)
+def test_parse_response_raises_structured_fault():
+    with pytest.raises(AladdinSoapError) as exc:
+        parse_response(FAULT_RESPONSE, "SetVolume")
+    assert exc.value.fault_code == "s:Client"
+    assert exc.value.upnp_error_code == 402
     assert "Invalid Args" in str(exc.value)
 
 
+@pytest.mark.parametrize("xml", ["not xml", "<other/>"])
+def test_parse_response_rejects_non_soap(xml):
+    with pytest.raises(AladdinError):
+        parse_response(xml, "GetVolume")
+
+
 def test_parse_device_description_resolves_urls():
-    base = "http://172.16.1.113:1481/"
-    desc = parse_device_description(DESCRIPTION_XML, base)
+    desc = parse_device_description(DESCRIPTION_XML, "http://172.16.1.113:1481/")
     assert desc.friendly_name == "Aladdin 2"
     assert desc.manufacturer == "Plutinosoft LLC"
+    assert desc.model_description is None
     assert desc.udn == "uuid:54F15F164D4F-dmr"
     assert set(desc.services) == {"AVTransport", "RenderingControl"}
-
     av = desc.services["AVTransport"]
     assert av.service_type == "urn:schemas-upnp-org:service:AVTransport:1"
     assert (
         av.control_url
         == "http://172.16.1.113:1481/AVTransport/54F15F164D4F-dmr/control.xml"
     )
-    assert av.name == "AVTransport"
+
+
+def test_parse_device_description_requires_device_element():
+    with pytest.raises(AladdinError):
+        parse_device_description("<root/>", "http://h/")
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    ("value", "expected"),
     [
         ("00:00:00", 0.0),
         ("0:01:30", 90.0),
         ("1:00:00", 3600.0),
         ("00:03:32", 212.0),
+        ("0:00:01.500", 1.5),
         ("NOT_IMPLEMENTED", None),
         ("", None),
         (None, None),
+        ("abc", None),
     ],
 )
 def test_parse_duration(value, expected):
@@ -121,7 +133,7 @@ def test_parse_duration(value, expected):
 
 
 @pytest.mark.parametrize(
-    "seconds,expected",
+    ("seconds", "expected"),
     [(0, "0:00:00"), (90, "0:01:30"), (3600, "1:00:00"), (212.6, "0:03:33")],
 )
 def test_format_duration(seconds, expected):
@@ -129,11 +141,9 @@ def test_format_duration(seconds, expected):
 
 
 def test_build_didl_metadata_is_valid_xml():
-    didl = build_didl_metadata("http://h/v.mp4?a=1&b=2", title="My <Video>")
-    assert "DIDL-Lite" in didl
+    didl = build_didl_metadata(
+        "http://h/v.mp4?a=1&b=2", title="My <Video>", upnp_class="object.item.videoItem"
+    )
     assert "My &lt;Video&gt;" in didl
     assert "http://h/v.mp4?a=1&amp;b=2" in didl
-    # parses without error
-    from xml.etree import ElementTree as ET
-
     ET.fromstring(didl)

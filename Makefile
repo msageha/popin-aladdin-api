@@ -1,6 +1,6 @@
 .PHONY: setup
 setup:
-	uv sync --extra test
+	uv sync
 	@if [ -f .env ]; then \
 		echo ".env already exists, skipping copy"; \
 	else \
@@ -10,7 +10,7 @@ setup:
 
 .PHONY: run
 run:
-	uv run uvicorn main:app --reload --app-dir src --host 127.0.0.1 --port 8000
+	uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000
 
 .PHONY: test
 test:
@@ -19,18 +19,13 @@ test:
 
 .PHONY: lint
 lint:
-	uv run ty check .
+	uv run ruff format --check .
 	uv run ruff check .
+	uv run ty check
 
 .PHONY: format
 format:
 	uv run ruff format .
-
-.PHONY: check
-check:
-	uv run ruff format --check .
-	uv run ruff check .
-	uv run ty check .
 
 .PHONY: build-image
 build-image:

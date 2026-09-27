@@ -5,22 +5,22 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev --no-install-project
+COPY README.md LICENSE ./
+COPY src ./src
+RUN uv sync --locked --no-dev --no-editable
 
 FROM python:3.14-slim-bookworm AS runner
 
-# Run as a non-root user.
 RUN useradd --create-home --uid 10001 appuser
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY src /app/src
 
 ENV PATH="/app/.venv/bin:${PATH}" \
-    PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1
 
 USER appuser
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "popin_aladdin_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
