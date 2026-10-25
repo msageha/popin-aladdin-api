@@ -72,6 +72,6 @@ repos:
         # language: node により prek が node と依存を隔離環境へ自前インストールするため、リポジトリに node は不要
         language: node
         additional_dependencies:
-          ["@commitlint/cli@21.2.3", "@commitlint/config-conventional@21.2.3"]
+          ["@commitlint/cli@21.2.4", "@commitlint/config-conventional@21.2.4"]
         entry: commitlint --edit
         stages: [commit-msg]
