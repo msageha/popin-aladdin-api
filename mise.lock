@@ -97,43 +97,43 @@ url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/667629154"
 provenance = "github-attestations"
 
 [[tools.fnox]]
-version = "1.42.0"
+version = "1.42.1"
 backend = "packslip:github.com/jdx/fnox"
-specifiers = ["v1.42.0"]
+specifiers = ["v1.42.1"]
 
 [tools.fnox."platforms.linux-arm64"]
-checksum = "sha256:bc1e3eb5fff590ae448bd8c2a765ff38f3e530998dcf85121fb1addcca763fa7"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:6eea3acbb0cdc06ad5b5f90906c99e6a8f5426a002c7057784b21c6c6f0e6700"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.linux-arm64-musl"]
-checksum = "sha256:dd9b6525065846b31a9f303a0f209ff90c2a0cec01a345cead148135f04cb141"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:ccf0b37c87ce3ae90df2b759ca88b7210e2dbecef4976c8c05cfed648f45089f"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.linux-x64"]
-checksum = "sha256:4f8b34668a5009f83ff293c3b5ca6b9cc33deaa336e72e1112079c0e2bd0ad8e"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:1c6f91f5e4ee6d53edc42acd56fa211dfc6ffd7cdef4ae7dd224490f5fadd8a0"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.linux-x64-musl"]
-checksum = "sha256:e3d4f3a679ff95459e4e2ec1c8e44c96d59b9a7a7a311dad930862e7be9232f7"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:6ec01a0c8dc57da6d0b88d71ea6b4f65c7f8ee3c74c740532d08b89b094cba7f"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.macos-arm64"]
-checksum = "sha256:347dbb53965757a891fb51baca210c9b3f24dad163f7c5b835e0e1992f9d83b4"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:06cd00e066958d49d96ae137f2162b92cfb0a66e4eb5a9e6efad32a306bf8b95"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.macos-x64"]
-checksum = "sha256:86701018251950b1f9a9d63d2b48a84e164559e6d736c9f716aad6a2ebb6c45b"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-x86_64-apple-darwin.tar.gz"
+checksum = "sha256:29df4de085277c5b70637c3f065824060f314e7a56c8d34ea8074d5af1f8623b"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-x86_64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [tools.fnox."platforms.windows-x64"]
-checksum = "sha256:422a763a65799585e096acd1225d774239179697c6d31a348b7cdb9e8402dc68"
-url = "https://github.com/jdx/fnox/releases/download/v1.42.0/fnox-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:64ff3ace04c22fa66457016881d0030b1b44cd2f46983dd2948682ee3c86d6f7"
+url = "https://github.com/jdx/fnox/releases/download/v1.42.1/fnox-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
 
 [[tools.gitleaks]]
