@@ -261,7 +261,7 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
 - `Dockerfile` のベースイメージ (runner の `python:*` のみ。builder の `uv:python3.14-*` は tag を解釈できず対象外なので、
   両者がずれないよう docker datasource の更新は automerge せず人手で揃える)。
 
-major 以外の更新は 1 つの PR に集約し、minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
+更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は 1 つの PR に集約し、minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
 Renovate 自身が自動マージします (`platformAutomerge: false`)。major は個別 PR で人手レビューします。
 
 ### GitHub リポジトリ設定
