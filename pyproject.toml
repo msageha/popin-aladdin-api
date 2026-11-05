@@ -46,3 +46,7 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.uv]
+# Renovate の minimumReleaseAge と揃え、公開から 7 日未満の版を解決に使わない
+exclude-newer = "7 days"

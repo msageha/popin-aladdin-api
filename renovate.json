@@ -33,6 +33,13 @@
       "groupName": "docker base images",
       "groupSlug": "docker-base-images",
       "automerge": false
+    },
+    {
+      "description": "lock file maintenance には release timestamp が無く、minimumReleaseAge の判定が常に pending になる。7 日の制約は pyproject.toml の exclude-newer で守る。mise.lock の更新は mise.toml で固定した版の配布物の情報に限られる。CI が green なら自動 merge する",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "minimumReleaseAge": null,
+      "automerge": true,
+      "automergeType": "pr"
     }
   ],
   "customManagers": [
