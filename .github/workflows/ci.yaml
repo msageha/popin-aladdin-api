@@ -27,7 +27,7 @@ jobs:
 
       # mise.lock があるため `mise install --locked` になり、mise.toml との不整合はここで失敗する。
       - name: Install mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       # ruff / ty の hook は uv run --locked で動くため、uv.lock と pyproject.toml の不整合もここで失敗する
       - name: Run prek
@@ -45,7 +45,7 @@ jobs:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - name: Run gitleaks
         run: mise exec -- gitleaks git --redact -v .
@@ -60,7 +60,7 @@ jobs:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - name: Run tests
         run: mise exec -- uv run --locked pytest
