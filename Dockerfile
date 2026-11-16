@@ -10,7 +10,7 @@ COPY README.md LICENSE ./
 COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
 
-FROM python:3.14-slim-bookworm AS runner
+FROM python:3.15-slim-bookworm AS runner
 
 RUN useradd --create-home --uid 10001 appuser
 
