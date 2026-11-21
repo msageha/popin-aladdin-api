@@ -323,9 +323,8 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
   - イメージの Python の patch version (と Python に同梱の OpenSSL 等) は uv の版で決まり、新しい Python の配布物を収録した uv の版に
     上がったときに更新されます (uv の更新がいつも Python を変えるわけではありません)。
   - Renovate の docker datasource が公開日時を取得できるのは Docker Hub だけで、GHCR・GCR のこの 2 つは `minimumReleaseAge` を
-    判定できません。公開日時が無い更新は 7 日の猶予期間を置かずに出します (`minimumReleaseAgeBehaviour: timestamp-optional`)。
-  - uv の minor / patch は他の依存と同じ PR で自動マージされます。tag を変えない digest の更新 (distroless の OS パッケージの修正等) は
-    別の PR になり、人手で merge します。
+    判定できません。そのため、公開日時が無い更新も PR にし (`minimumReleaseAgeBehaviour: timestamp-optional`)、猶予期間の代わりに
+    自動マージせず人手で merge します。major 以外の更新 (uv の版と digest) は、他の依存とは別の 1 つの PR にまとめます。
 
 次は Renovate の対象外で、手で書き換えます。
 
@@ -333,8 +332,8 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
   (`renovate.json` で pyenv manager を無効にしています)。
 - distroless の Debian の世代 (`Dockerfile` の `cc-debian13` のイメージ名)。
 
-更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は、ベースイメージの digest を除いて 1 つの PR に
-集約します。このうち minor / patch は `minimumReleaseAge` (7 日) 経過後 (ベースイメージは猶予期間なし)、CI green を条件に
+更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は、ベースイメージを除いて 1 つの PR に
+集約します。このうち minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
 Renovate 自身が自動マージします (`platformAutomerge: false`)。major は個別 PR で人手レビューします。
 
 ### GitHub リポジトリ設定

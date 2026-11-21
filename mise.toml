@@ -76,7 +76,8 @@ depends = ["build-image"]
 run = """
 container=$(docker create --read-only --cap-drop ALL --security-opt no-new-privileges \\
   -p 127.0.0.1::8000 -e POPIN_ALADDIN_HOST=127.0.0.1 popin-aladdin-api:latest)
-trap 'docker rm -f "$container" >/dev/null' EXIT
+# 失敗したときは (起動直後に終了して docker port が失敗した場合も) container のログを出してから片付ける
+trap 'rc=$?; [ "$rc" -eq 0 ] || docker logs "$container"; docker rm -f "$container" >/dev/null; exit "$rc"' EXIT
 trap 'exit 130' INT TERM
 docker start "$container" >/dev/null
 url="http://$(docker port "$container" 8000/tcp)/api/health"
@@ -84,7 +85,6 @@ url="http://$(docker port "$container" 8000/tcp)/api/health"
 if ! status=$(curl -sS -o /dev/null -w '%{http_code}' --noproxy 127.0.0.1 --max-time 5 --retry 10 --retry-all-errors --retry-delay 1 "$url") \\
   || [ "$status" != 200 ]; then
   echo "GET /api/health failed (status: $status)" >&2
-  docker logs "$container"
   exit 1
 fi
 """
