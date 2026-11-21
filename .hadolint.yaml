@@ -8,3 +8,4 @@ label-schema:
 trustedRegistries:
   - docker.io
   - ghcr.io
+  - gcr.io

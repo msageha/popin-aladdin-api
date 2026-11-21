@@ -75,3 +75,34 @@ jobs:
 
       - name: Run tests
         run: mise run test
+
+  # ランナーの distroless には shell が無く、builder から写した Python と venv は base や uv の更新で壊れうるので、
+  # 両 arch で実際に build して起動を確かめる。
+  image:
+    name: image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # check-image が使うのは runner の docker と curl だけなので、mise 本体だけを入れ、ツールの導入・キャッシュの
+      # 復元・postinstall の hook (prek install) を省く。
+      - name: Install mise
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install: false
+          cache: false
+
+      - name: Build and check the image
+        run: mise run --skip-tools check-image

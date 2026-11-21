@@ -11,6 +11,7 @@ UPnP/DLNA MediaRenderer (SOAP) と独自制御プロトコル (TCP / UDP) をラ
 - `mise run format`: リポジトリ全体の import の並べ替えと ruff format (ファイルを書き換える)。
 - `mise run test`: coverage 付き pytest。テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで検証する。
 - `mise run pre-commit`: CI の `prek` job と同じ hook (dprint・actionlint・zizmor・hadolint・typos・ruff の整形・lint・gitleaks 等) を全追跡ファイルに実行する。整形の hook はファイルを書き換える。zizmor の online audit は token があるときだけ走る (README「開発」)。
+- `mise run check-image`: Docker イメージを `popin-aladdin-api:latest` として build し、ダミーの設定・read-only・capability なしで起動して `/api/health` の応答を確かめる (CI の `image` job が amd64 / arm64 で同じ task を実行する)。image の build の入力 (`Dockerfile`・`.dockerignore`・`.python-version`・`pyproject.toml`・`uv.lock`・`src/`) か、この task を変えたら実行する。Docker を使えない環境では、その変更を含む commit で走った PR の `image` job の結果で確かめ、無ければ未検証と報告する。ランナーは distroless で shell が無いので、中は `docker run --rm --entrypoint python popin-aladdin-api:latest -c '<code>'` で調べる。
 - `mise run docs`: `mise.toml` の tasks を変更したあと README のタスク一覧を同期する。
 - git hook: commit 時は整形の hook と lint、push 時は lint と test が走る (対象のファイルが変わったときだけ。README「pre-commit hooks」)。main を checkout しているときの commit は `no-commit-to-branch` hook が止める (`mise run pre-commit` はこの hook を除く)。commit 時の hook がファイルを書き換えると、その commit は失敗する。書き換えた差分を見直し、stage し直してから commit し直す。
 
@@ -26,7 +27,7 @@ UPnP/DLNA MediaRenderer (SOAP) と独自制御プロトコル (TCP / UDP) をラ
   - zizmor: 該当行の `# zizmor: ignore[<audit 名>]`。
 - 層の依存は `pyproject.toml` の `[tool.importlinter]` が検査する。`popin_aladdin_api` の中は `main` → `api` → `settings` → `device` の向きにだけ依存し (途中の層は飛ばしてよい。`api` と `device` の中の層は契約の `layers` を見る。`|` で並べた同じ層のモジュールどうしは import できない)、fastapi は `main`・`api`、httpx は `device.renderer`、pydantic_settings は `settings` だけが直接 import できる。`popin_aladdin_api`・`api`・`device` の直下にモジュールを足したら、`exhaustive = true` の契約の `layers` にも足す (足さないと lint-imports が失敗する)。
 - `.gitignore` はホワイトリスト方式。新しいファイルを追跡するときは対応する `!` の行を追記する。
-- ツールは `mise.toml` に exact version で pin し、変更したら `mise lock` で `mise.lock` を追従させる。npm: backend のツール (pyright) は `mise.lock` が `.mise/locks/` の下の依存の lock を digest で参照するので、その差分も同じ commit に含め、手で編集しない。Python パッケージは `pyproject.toml` と `uv.lock` で固定し、`uv run --locked` で実行する。依存を変えたら `mise exec -- uv lock` で `uv.lock` を更新し、同じ commit に含める。`uv.lock` の取得元は `pyproject.toml` の `[[tool.uv.index]]` (`pypi.flatt.tech`) で、`UV_DEFAULT_INDEX`・`UV_INDEX` を設定した環境では変わりうるので、更新後に `uv.lock` の `registry` が変わっていないことを確かめる。Python 本体は `.python-version` (3.14) を uv が取得する。
+- ツールは `mise.toml` に exact version で pin し、変更したら `mise lock` で `mise.lock` を追従させる。npm: backend のツール (pyright) は `mise.lock` が `.mise/locks/` の下の依存の lock を digest で参照するので、その差分も同じ commit に含め、手で編集しない。Python パッケージは `pyproject.toml` と `uv.lock` で固定し、`uv run --locked` で実行する。依存を変えたら `mise exec -- uv lock` で `uv.lock` を更新し、同じ commit に含める。`uv.lock` の取得元は `pyproject.toml` の `[[tool.uv.index]]` (`pypi.flatt.tech`) で、`UV_DEFAULT_INDEX`・`UV_INDEX` を設定した環境では変わりうるので、更新後に `uv.lock` の `registry` が変わっていないことを確かめる。Python 本体は `.python-version` (3.14) を uv が取得し、手元・CI・Docker の build で同じ minor を使う。minor は Renovate の対象外で、依存とツールの対応を確かめてから手で上げる。
 - workflow の `uses:` は commit SHA で固定し、バージョンをコメントで併記する。
 - コメント・ドキュメントは日本語で書き、技術用語・識別子は原語のまま使う。例外メッセージ・ログは英語。
 

@@ -11,6 +11,10 @@
   "pre-commit": {
     "enabled": true
   },
+  "pyenv": {
+    "description": ".python-version の Python の minor は、依存とツールの対応を確かめてから手で上げる",
+    "enabled": false
+  },
   "minimumReleaseAge": "7 days",
   "platformAutomerge": false,
   "schedule": ["before 9am on monday"],
@@ -20,6 +24,11 @@
       "matchManagers": ["npm"],
       "matchFileNames": [".mise/locks/**"],
       "enabled": false
+    },
+    {
+      "description": "docker datasource が公開日時を取得できるのは Docker Hub だけで、Dockerfile のベースイメージ (GHCR・GCR) は minimumReleaseAge を判定できず、既定 (timestamp-required) では更新が無期限に保留される。公開日時が無いときは age check を省いて PR を作る",
+      "matchDatasources": ["docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
       "description": "PR の乱立を防ぐため、major 以外 (minor/patch/pin/digest) の更新は manager・エコシステム横断で 1 つの PR に集約する。major はグルーピングせず個別 PR で人手レビューする",
@@ -34,8 +43,9 @@
       "automergeType": "pr"
     },
     {
-      "description": "Dockerfile のベースイメージ (docker datasource) は automerge しない。builder (uv:python3.14-*) の tag は docker versioning で解釈できず Renovate が触れないため、runner (python:3.14-*) だけが 3.15 へ minor 更新されると builder で作った .venv が runner で動かなくなる。automerge 対象外の更新が混ざると group 全体が automerge されなくなるため通常 group からも分離する",
+      "description": "Dockerfile のベースイメージは公開日時が無く 7 日の猶予期間を置けないので、自動マージせず人手でレビューする。自動マージ対象外の更新が集約 PR に入ると group 全体が自動マージされなくなるので、別の PR に分ける",
       "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "groupName": "docker base images",
       "groupSlug": "docker-base-images",
       "automerge": false

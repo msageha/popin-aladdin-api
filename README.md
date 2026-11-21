@@ -52,18 +52,27 @@ Swagger UI: http://127.0.0.1:8000/docs
 
 ```bash
 mise run build-image  # docker build -t popin-aladdin-api:latest .
-mise run run-image    # 設定されている環境変数を -e で渡して docker run する
+mise run check-image  # build し、ダミーの設定・read-only で起動して /api/health が応答するのを確かめる (CI の image job と同じ)
+mise run run-image    # 設定されている環境変数を -e で渡し、8000/tcp と UDP の応答ポートを公開して docker run する
 ```
 
-mise を使わずに起動する場合 (docker compose 等) は、`POPIN_ALADDIN_HOST` を環境変数で渡してください。
+ランナーは shell やパッケージマネージャを持たない distroless (`gcr.io/distroless/cc-debian13:nonroot`) です。
+distroless には Python 3.14 のイメージが無いので、ビルダで uv が配布する Python を入れ、実行時に使わないファイル
+(tcl/tk・pip・ヘッダ等) を除いてからランナーへ写します。ランナーにはその Python と、依存とこのパッケージを入れた `.venv` だけを置きます。
+
+- UID 65532 の非 root で動きます。root filesystem を read-only にし、capability をすべて外しても動くので、
+  `mise run run-image` はその設定 (`--read-only --cap-drop ALL --security-opt no-new-privileges`) で起動します。
+  docker compose では `read_only: true`・`cap_drop: [ALL]`・`security_opt: [no-new-privileges:true]` が同じ設定です。
+- shell が無いので、`docker exec <container> sh` では入れず、shell を前提にしたコマンド (compose の healthcheck の
+  `CMD-SHELL`、`command` の中のパイプや変数展開等) も動きません。compose の `healthcheck.test` は exec 形式で Python を呼びます
+  (例: `["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]`)。
+  中を調べるときは `docker run --rm --entrypoint python popin-aladdin-api:latest -c '<code>'` で起動します。
+- mise を使わずに起動する場合 (docker compose 等) は、`POPIN_ALADDIN_HOST` を環境変数で渡してください。
 
 UDP JSON コマンドの応答 (`/api/capture`、`/api/remote/device`) は
 デバイスからこのサーバーの `CONTROL_REPLY_UDP_PORT` (既定 16751) に届くため、bridge ネットワークでは
-`-p 16751:16751/udp` の公開が必要です。`/api/discover` のブロードキャストは bridge ネットワークからは LAN に届かないので、
+`-p 16751:16751/udp` の公開が必要です (`mise run run-image` は `CONTROL_REPLY_UDP_PORT` の値で公開します)。`/api/discover` のブロードキャストは bridge ネットワークからは LAN に届かないので、
 `--network host` で動かすか、ホスト上で直接起動してください。
-
-`uv` ビルダで依存とパッケージを `.venv` にインストールし、`python:slim` ランナーへ
-`.venv` だけをコピーして非 root で実行します。
 
 ## エンドポイント
 
@@ -202,6 +211,7 @@ CI (`ci.yaml`) もローカルも同じ `mise.lock` からツールを解決す�
 `mise install --locked` が失敗します)。npm: backend のツール (pyright) は、`mise.lock` が依存の lock を `.mise/locks/`
 の下のファイル (sidecar) で digest 付きで参照するので、`.mise/locks/` の差分も同じ commit に含め、手で編集しません
 (参照先は `mise lock --sidecars` で確認できます)。Python 本体は mise ではなく uv が `.python-version` (3.14) に従って取得します。
+uv は手元・CI・Docker イメージの build のどれでもこのファイルから Python の minor version を選びます。
 [fnox](https://fnox.jdx.dev/) は暗号化ファイル・パスワードマネージャ等から secret を読み込んで環境変数として
 コマンドに渡す secret manager で、`fnox.toml` はその daemon (解決済み secret のメモリキャッシュ。12h 無操作で終了) の
 設定です。この API 自体に secret は無く、template との共通設定として置いています。
@@ -263,7 +273,7 @@ hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/p
 - [actionlint](https://github.com/rhysd/actionlint): workflow の静的検査。`run:` スクリプトの検査に
   [shellcheck](https://github.com/koalaman/shellcheck) を使います。
 - [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。`.hadolint.yaml` で style を含む全 severity を
-  失敗にし、ベースイメージの registry を docker.io / ghcr.io に限り、OCI label (`org.opencontainers.image.source` /
+  失敗にし、ベースイメージの registry を docker.io / ghcr.io / gcr.io に限り、OCI label (`org.opencontainers.image.source` /
   `licenses`) を必須にしています。`label-schema` に無い label は拒否するので、label を足すときはそこにも足します。
   Dockerfile 内の `# hadolint ignore=` は無効にしているので、除外が要るときは `.hadolint.yaml` の `ignored` に書きます。
 - [typos](https://github.com/crate-ci/typos): 英単語の typo 検査。`typos.toml` で綴りを米国英語に統一しています。
@@ -292,6 +302,8 @@ required status check の名前になります。
   ここで失敗する。続けて、online audit を含めた zizmor を token 付きで実行する。
 - `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
 - `verify`: `mise run test` でテストを実行する。
+- `image (amd64)` / `image (arm64)`: 各 arch の runner で `mise run check-image` を実行し、Docker イメージを build して
+  read-only・capability なしで起動し、`/api/health` が応答することを確かめる。
 
 main への push では実行しません (main は PR 必須で、変更は PR の CI で検証してから merge します)。
 workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョンをコメントで併記します。
@@ -307,16 +319,27 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
   (npm manager が別に更新すると、`mise.toml` の pin や `aube-lock.yaml` とずれるため)。
 - `.pre-commit-config.yaml` の hook `rev` と、`language: node` の hook の `additional_dependencies`。
 - workflow の `uses:` の commit SHA と、`dprint.json` の plugin URL / checksum。
-- `Dockerfile` のベースイメージ (runner の `python:*` のみ。builder の `uv:python3.14-*` は tag を解釈できず対象外なので、
-  両者がずれないよう docker datasource の更新は automerge せず人手で揃える)。
+- `Dockerfile` のベースイメージ。uv は tag (uv の版) と digest、distroless は `nonroot` tag の digest を更新します。
+  - イメージの Python の patch version (と Python に同梱の OpenSSL 等) は uv の版で決まり、新しい Python の配布物を収録した uv の版に
+    上がったときに更新されます (uv の更新がいつも Python を変えるわけではありません)。
+  - Renovate の docker datasource が公開日時を取得できるのは Docker Hub だけで、GHCR・GCR のこの 2 つは `minimumReleaseAge` を
+    判定できません。そのため、公開日時が無い更新も PR にし (`minimumReleaseAgeBehaviour: timestamp-optional`)、猶予期間の代わりに
+    自動マージせず人手で merge します。major 以外の更新 (uv の版と digest) は、他の依存とは別の 1 つの PR にまとめます。
 
-更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は 1 つの PR に集約し、minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
+次は Renovate の対象外で、手で書き換えます。
+
+- Python の minor version (`.python-version`)。依存とツールが新しい minor に対応したのを確かめてから上げます
+  (`renovate.json` で pyenv manager を無効にしています)。
+- distroless の Debian の世代 (`Dockerfile` の `cc-debian13` のイメージ名)。
+
+更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は、ベースイメージを除いて 1 つの PR に
+集約します。このうち minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に
 Renovate 自身が自動マージします (`platformAutomerge: false`)。major は個別 PR で人手レビューします。
 
 ### GitHub リポジトリ設定
 
 ファイルとして管理できないリポジトリ設定です。public リポジトリなので ruleset と secret scanning が使えます。
-required checks は `ci.yaml` の job の `name` (`prek` / `gitleaks` / `verify`) に合わせます。
+required checks は `ci.yaml` の job の `name` (`prek` / `gitleaks` / `verify` / `image (amd64)` / `image (arm64)`) に合わせます。
 
 ```sh
 REPO=msageha/popin-aladdin-api
@@ -360,7 +383,9 @@ gh api -X POST "repos/$REPO/rulesets" --input - <<'JSON'
       "required_status_checks": [
         {"context": "prek", "integration_id": 15368},
         {"context": "gitleaks", "integration_id": 15368},
-        {"context": "verify", "integration_id": 15368}
+        {"context": "verify", "integration_id": 15368},
+        {"context": "image (amd64)", "integration_id": 15368},
+        {"context": "image (arm64)", "integration_id": 15368}
       ]
     }}
   ]
@@ -561,6 +586,14 @@ UDP 16737 (タッチマウス) も対象外です。
 
 Build the Docker image popin-aladdin-api:latest
 
+## `check-image`
+
+- Depends: build-image
+
+- **Usage:** `check-image`
+
+Build the Docker image and check that it serves /api/health with a read-only root filesystem and no capabilities
+
 ## `clean`
 
 - **Usage:** `clean`
@@ -601,7 +634,7 @@ Run the pre-commit stage hooks on all tracked files with prek (same as the CI pr
 
 - **Usage:** `run-image`
 
-Run the Docker image on port 8000 with the settings from the environment
+Run the Docker image on port 8000 (and the UDP reply port) with the settings from the environment
 
 ## `template-diff`
 

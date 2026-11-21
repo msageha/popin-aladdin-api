@@ -35,6 +35,7 @@
 !/uv.lock
 !/.python-version
 !/Dockerfile
+!/.dockerignore
 !/.hadolint.yaml
 !/src/
 !/src/**
