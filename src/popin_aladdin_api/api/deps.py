@@ -31,5 +31,5 @@ def get_remote(request: Request) -> RemoteClient:
     return request.app.state.remote
 
 
-RendererDep = Annotated[RendererClient, Depends(get_renderer)]
-RemoteDep = Annotated[RemoteClient, Depends(get_remote)]
+type RendererDep = Annotated[RendererClient, Depends(get_renderer)]
+type RemoteDep = Annotated[RemoteClient, Depends(get_remote)]

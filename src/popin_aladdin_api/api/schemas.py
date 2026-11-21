@@ -10,7 +10,7 @@ from popin_aladdin_api.device.renderer import (
 )
 
 # SOAP の action / 引数名はそのまま XML 要素名になるので、XML の名前として妥当な文字列に限る。
-XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
+type XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
 
 
 class Volume(BaseModel):

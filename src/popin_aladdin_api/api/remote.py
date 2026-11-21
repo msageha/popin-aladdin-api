@@ -28,7 +28,7 @@ from popin_aladdin_api.device.remote import (
 router = APIRouter(tags=["remote"], dependencies=[device_lock])
 
 # Android の package 名。パスの一部として受けるので、ドット区切りの識別子だけに限る。
-PackageName = Annotated[
+type PackageName = Annotated[
     str,
     Path(
         pattern=r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$",
