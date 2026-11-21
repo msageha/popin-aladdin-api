@@ -1,36 +1,45 @@
-# commit-msg stage の commitlint を動かすため、pre-commit に加えて commit-msg hook も導入する
-default_install_hook_types:
-  - pre-commit
-  - commit-msg
-# stages 未指定の hook は導入した全 hook type で走るため、pre-commit stage に限定して
-# commit-msg stage での二重実行を避ける (commitlint だけが stages: [commit-msg] を持つ)
-default_stages:
-  - pre-commit
+# pytest は push 前、commitlint は commit message の確定時に実行するため、pre-push と commit-msg も install する。
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+# rebase や cherry-pick で pre-commit を経ずに作った commit も、push の前に検査する。
+default_stages: [pre-commit, pre-push]
+
+# .mise/locks/ は mise lock が生成し、mise.lock が digest で参照する。整形すると digest が合わなくなるので、どの hook にも渡さない。
+exclude: ^\.mise/locks/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # ファイルを書き換える hook は commit 時だけに実行する。push 時は push する commit ではなく作業ツリーを見るので、
+      # 次の作業のファイルを書き換えて push を失敗させうる。push 時の Python の整形の検査は lint hook が行う。
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
       - id: check-json
       - id: check-toml
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: mixed-line-ending
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12
-    hooks:
-      - id: actionlint-system
+        stages: [pre-commit]
+      # main は PR 必須 (ruleset) なので、手元で main に commit した時点で止める。
+      # push 時は送信先ではなく checkout 中のブランチを見るので、commit 時だけ実行する。
+      # 検証用の mise run pre-commit は main 上でも使えるよう、この hook を SKIP する。
+      - id: no-commit-to-branch
+        args: [--branch, main]
+        stages: [pre-commit]
+  # ツールは mise.toml で pin した版を使う。git hook はシェルの PATH を引き継がないことがあるので、mise exec / mise run で起動する。
+  # include_deleted を付けた hook は、削除だけの変更でも実行し、削除したファイルを参照する箇所を検出する。
   - repo: local
     hooks:
       - id: mise-task-docs
         name: Sync task docs into README.md
         language: system
         entry: mise run docs
-        files: ^mise\.toml$
+        files: ^(mise\.toml|README\.md)$
         pass_filenames: false
+        stages: [pre-commit]
       - id: dprint-fmt
         name: Format json/yaml/markdown/toml/Dockerfile with dprint
         language: system
@@ -38,11 +47,18 @@ repos:
         # (例: uv.lock のみの commit) に exit 14 (No files found) で失敗しないようにする
         entry: mise exec -- dprint fmt --allow-no-files
         types_or: [json, yaml, markdown, toml, dockerfile]
+        stages: [pre-commit]
+      - id: actionlint
+        name: Lint GitHub Actions workflows with actionlint
+        language: system
+        entry: mise exec -- actionlint
+        types: [yaml]
+        files: ^\.github/workflows/
       - id: hadolint
         name: Lint Dockerfile with hadolint
         language: system
         entry: mise exec -- hadolint
-        files: (^|/)([^/]+\.)?Dockerfile(\.[^/]+)?$
+        types: [dockerfile]
       - id: typos
         name: Check spelling with typos
         language: system
@@ -56,24 +72,37 @@ repos:
         entry: mise exec -- zizmor --persona auditor --strict-collection .
         files: ^(\.github/|\.pre-commit-config\.yaml$)
         pass_filenames: false
-      # ruff / ty は uv.lock のバージョンで実行し、pre-commit 側と二重管理しない。
-      # mise exec 経由にして、mise.toml で pin した uv を hook からも使う
+      # 整形は commit するファイルだけに行う (mise run format はリポジトリ全体を整形し、commit しない未追跡のファイルも書き換える)。
+      # ruff format は import を並べ替えないので、import の並びの規則 (I) の修正を先に適用する。
+      - id: ruff-isort
+        name: Sort python imports with ruff
+        language: system
+        entry: mise exec -- uv run --locked ruff check --select I --fix
+        types: [python]
+        stages: [pre-commit]
       - id: ruff-format
         name: Format python with ruff
         language: system
         entry: mise exec -- uv run --locked ruff format
         types: [python]
-      - id: ruff-check
-        name: Lint python with ruff
+        stages: [pre-commit]
+      # ruff・import-linter・ty・pyright の設定は pyproject.toml にあり、版は uv.lock と mise.toml で決まるので、
+      # lint は設定だけの変更でも実行する。型検査と層の検査はファイル単位では行えないので、作業ツリー全体を検査する。
+      - id: lint
+        name: Lint, check layers and type-check python with mise run lint
         language: system
-        entry: mise exec -- uv run --locked ruff check --fix
-        types: [python]
-      - id: ty
-        name: Type-check python with ty
-        language: system
-        entry: mise exec -- uv run --locked ty check
-        types: [python]
+        entry: mise run lint
+        files: (\.pyi?$|^(pyproject\.toml|uv\.lock|\.python-version|mise\.toml|mise\.lock)$)
         pass_filenames: false
+        include_deleted: true
+      - id: test
+        name: Run python tests with mise run test
+        language: system
+        entry: mise run test
+        files: (\.pyi?$|^(pyproject\.toml|uv\.lock|\.python-version|mise\.toml|mise\.lock)$)
+        pass_filenames: false
+        include_deleted: true
+        stages: [pre-push]
       # staged 差分だけを対象にした secret スキャン。CI の gitleaks job (全履歴) は commit 後の検知なので、
       # commit 前に止める役割はこの hook が担う
       - id: gitleaks
@@ -81,9 +110,11 @@ repos:
         language: system
         entry: mise exec -- gitleaks git --pre-commit --redact --staged --verbose
         pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       - id: commitlint
         name: Lint commit message with commitlint
-        # language: node により prek が node と依存を隔離環境へ自前インストールするため、リポジトリに node は不要
+        # language: node により prek が node と依存を隔離環境へ自前インストールする
         language: node
         additional_dependencies:
           ["@commitlint/cli@21.2.4", "@commitlint/config-conventional@21.2.4"]

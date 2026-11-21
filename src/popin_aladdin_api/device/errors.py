@@ -1,5 +1,6 @@
 class AladdinError(Exception):
-    """デバイス制御に失敗したときの基底例外。
+    """
+    デバイス制御に失敗したときの基底例外。
 
     fault_code / upnp_error_code は SOAP fault のときだけ埋まるが、API の 502 応答が
     常に同じ形になるよう基底に持たせる。

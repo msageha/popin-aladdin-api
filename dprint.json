@@ -3,6 +3,7 @@
     "**/node_modules",
     "**/*-lock.json",
     "mise.lock",
+    ".mise/locks/**",
     "uv.lock"
   ],
   "plugins": [

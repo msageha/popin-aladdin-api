@@ -16,6 +16,12 @@
   "schedule": ["before 9am on monday"],
   "packageRules": [
     {
+      "description": ".mise/locks/ の package.json は mise lock が npm: backend のツール (pyright) の依存の lock と一緒に生成する manifest。npm manager が通常の package として更新すると、mise.toml の pin や aube-lock.yaml とずれるので対象外にする。ツールの更新は mise manager が mise.lock と sidecar をまとめて行う",
+      "matchManagers": ["npm"],
+      "matchFileNames": [".mise/locks/**"],
+      "enabled": false
+    },
+    {
       "description": "PR の乱立を防ぐため、major 以外 (minor/patch/pin/digest) の更新は manager・エコシステム横断で 1 つの PR に集約する。major はグルーピングせず個別 PR で人手レビューする",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "groupName": "all non-major dependencies",

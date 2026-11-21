@@ -1,3 +1,4 @@
+from collections.abc import AsyncGenerator
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -10,8 +11,7 @@ from popin_aladdin_api.device.errors import (
 )
 from popin_aladdin_api.device.models import PlayMode
 from popin_aladdin_api.device.renderer import RendererClient
-
-from .test_upnp import DESCRIPTION_XML, FAULT_RESPONSE
+from tests.device.test_upnp import DESCRIPTION_XML, FAULT_RESPONSE
 
 pytestmark = pytest.mark.anyio
 
@@ -55,27 +55,30 @@ def fake() -> FakeRenderer:
 
 
 @pytest.fixture
-async def client(fake: FakeRenderer):
+async def client(fake: FakeRenderer) -> AsyncGenerator[RendererClient]:
     renderer = RendererClient("172.16.1.113")
-    renderer._http = httpx.AsyncClient(transport=httpx.MockTransport(fake.handle))
+    # デバイスへの HTTP を MockTransport に差し替える。
+    renderer._http = httpx.AsyncClient(transport=httpx.MockTransport(fake.handle))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     async with renderer:
         yield renderer
 
 
-def test_description_url_uses_port_and_path():
+def test_description_url_uses_port_and_path() -> None:
     assert RendererClient("172.16.1.113").description_url == "http://172.16.1.113:1481/"
     client = RendererClient("h", port=8080, description_path="desc.xml")
     assert client.description_url == "http://h:8080/desc.xml"
 
 
-async def test_device_info_lists_services(client: RendererClient):
+async def test_device_info_lists_services(client: RendererClient) -> None:
     info = await client.device_info()
     assert info.friendly_name == "Aladdin 2"
     assert info.services == ["AVTransport", "RenderingControl"]
     assert info.description_url == "http://172.16.1.113:1481/"
 
 
-async def test_transport_info_maps_response(client: RendererClient, fake: FakeRenderer):
+async def test_transport_info_maps_response(
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     fake.responses["GetTransportInfo"] = {
         "CurrentTransportState": "PLAYING",
         "CurrentTransportStatus": "OK",
@@ -89,8 +92,8 @@ async def test_transport_info_maps_response(client: RendererClient, fake: FakeRe
 
 
 async def test_position_info_decodes_durations(
-    client: RendererClient, fake: FakeRenderer
-):
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     fake.responses["GetPositionInfo"] = {
         "Track": "1",
         "TrackDuration": "0:03:32",
@@ -107,7 +110,7 @@ async def test_position_info_decodes_durations(
     assert pos.track_metadata is None
 
 
-async def test_volume_and_mute(client: RendererClient, fake: FakeRenderer):
+async def test_volume_and_mute(*, client: RendererClient, fake: FakeRenderer) -> None:
     fake.responses["GetVolume"] = {"CurrentVolume": "35"}
     fake.responses["GetMute"] = {"CurrentMute": "1"}
     assert await client.get_volume() == 35
@@ -117,18 +120,18 @@ async def test_volume_and_mute(client: RendererClient, fake: FakeRenderer):
 
 
 async def test_malformed_numeric_response_is_device_error(
-    client: RendererClient, fake: FakeRenderer
-):
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     fake.responses["GetVolume"] = {"CurrentVolume": "loud"}
     with pytest.raises(AladdinError):
         await client.get_volume()
 
 
 async def test_set_volume_and_mute_build_args(
-    client: RendererClient, fake: FakeRenderer
-):
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     await client.set_volume(40)
-    await client.set_mute(True)
+    await client.set_mute(mute=True)
     assert fake.calls == [
         (
             "RenderingControl",
@@ -143,7 +146,9 @@ async def test_set_volume_and_mute_build_args(
     ]
 
 
-async def test_seek_and_play_mode(client: RendererClient, fake: FakeRenderer):
+async def test_seek_and_play_mode(
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     await client.seek(90)
     await client.set_play_mode(PlayMode.REPEAT_ALL)
     assert fake.calls[0][2] == {
@@ -155,8 +160,8 @@ async def test_seek_and_play_mode(client: RendererClient, fake: FakeRenderer):
 
 
 async def test_cast_generates_metadata_then_plays(
-    client: RendererClient, fake: FakeRenderer
-):
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     await client.cast("http://h/v.mp4")
     assert [call[1] for call in fake.calls] == ["SetAVTransportURI", "Play"]
     args = fake.calls[0][2]
@@ -164,30 +169,35 @@ async def test_cast_generates_metadata_then_plays(
     assert "DIDL-Lite" in args["CurrentURIMetaData"]
 
 
-async def test_cast_without_autoplay(client: RendererClient, fake: FakeRenderer):
+async def test_cast_without_autoplay(
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     await client.cast("http://h/v.mp4", metadata="<DIDL-Lite/>", autoplay=False)
     assert [call[1] for call in fake.calls] == ["SetAVTransportURI"]
     assert fake.calls[0][2]["CurrentURIMetaData"] == "<DIDL-Lite/>"
 
 
-async def test_missing_service_raises(client: RendererClient):
+async def test_missing_service_raises(client: RendererClient) -> None:
     with pytest.raises(AladdinError, match="ConnectionManager"):
         await client.protocol_info()
 
 
-async def test_soap_fault_is_raised(client: RendererClient, fake: FakeRenderer):
+async def test_soap_fault_is_raised(
+    *, client: RendererClient, fake: FakeRenderer
+) -> None:
     fake.fault_actions.add("SetVolume")
     with pytest.raises(AladdinSoapError) as exc:
         await client.set_volume(20)
     assert exc.value.upnp_error_code == 402
 
 
-async def test_unreachable_device_is_connection_error():
+async def test_unreachable_device_is_connection_error() -> None:
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
     renderer = RendererClient("172.16.1.113")
-    renderer._http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))
+    # デバイスへの HTTP を MockTransport に差し替える。
+    renderer._http = httpx.AsyncClient(transport=httpx.MockTransport(refuse))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     async with renderer:
         with pytest.raises(AladdinConnectionError):
             await renderer.discover()

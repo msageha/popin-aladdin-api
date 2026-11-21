@@ -63,11 +63,11 @@ FAULT_RESPONSE = (
 )
 
 
-def test_build_envelope_escapes_and_wraps():
+def test_build_envelope_escapes_and_wraps() -> None:
     body = build_envelope(
         "urn:schemas-upnp-org:service:AVTransport:1",
-        "SetAVTransportURI",
-        {"InstanceID": 0, "CurrentURI": "http://h/a&b.mp4", "Empty": None},
+        action="SetAVTransportURI",
+        args={"InstanceID": 0, "CurrentURI": "http://h/a&b.mp4", "Empty": None},
     )
     assert body.startswith("<?xml")
     assert 'xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"' in body
@@ -76,26 +76,30 @@ def test_build_envelope_escapes_and_wraps():
     assert "<Empty></Empty>" in body
 
 
-def test_parse_response_extracts_args():
-    assert parse_response(GET_VOLUME_RESPONSE, "GetVolume") == {"CurrentVolume": "35"}
+def test_parse_response_extracts_args() -> None:
+    assert parse_response(GET_VOLUME_RESPONSE, action="GetVolume") == {
+        "CurrentVolume": "35"
+    }
 
 
-def test_parse_response_raises_structured_fault():
+def test_parse_response_raises_structured_fault() -> None:
     with pytest.raises(AladdinSoapError) as exc:
-        parse_response(FAULT_RESPONSE, "SetVolume")
+        parse_response(FAULT_RESPONSE, action="SetVolume")
     assert exc.value.fault_code == "s:Client"
     assert exc.value.upnp_error_code == 402
     assert "Invalid Args" in str(exc.value)
 
 
 @pytest.mark.parametrize("xml", ["not xml", "<other/>"])
-def test_parse_response_rejects_non_soap(xml):
+def test_parse_response_rejects_non_soap(xml: str) -> None:
     with pytest.raises(AladdinError):
-        parse_response(xml, "GetVolume")
+        parse_response(xml, action="GetVolume")
 
 
-def test_parse_device_description_resolves_urls():
-    desc = parse_device_description(DESCRIPTION_XML, "http://172.16.1.113:1481/")
+def test_parse_device_description_resolves_urls() -> None:
+    desc = parse_device_description(
+        DESCRIPTION_XML, base_url="http://172.16.1.113:1481/"
+    )
     assert desc.friendly_name == "Aladdin 2"
     assert desc.manufacturer == "Plutinosoft LLC"
     assert desc.model_description is None
@@ -109,9 +113,9 @@ def test_parse_device_description_resolves_urls():
     )
 
 
-def test_parse_device_description_requires_device_element():
+def test_parse_device_description_requires_device_element() -> None:
     with pytest.raises(AladdinError):
-        parse_device_description("<root/>", "http://h/")
+        parse_device_description("<root/>", base_url="http://h/")
 
 
 @pytest.mark.parametrize(
@@ -128,7 +132,7 @@ def test_parse_device_description_requires_device_element():
         ("abc", None),
     ],
 )
-def test_parse_duration(value, expected):
+def test_parse_duration(*, value: str | None, expected: float | None) -> None:
     assert parse_duration(value) == expected
 
 
@@ -136,11 +140,11 @@ def test_parse_duration(value, expected):
     ("seconds", "expected"),
     [(0, "0:00:00"), (90, "0:01:30"), (3600, "1:00:00"), (212.6, "0:03:33")],
 )
-def test_format_duration(seconds, expected):
+def test_format_duration(*, seconds: float, expected: str) -> None:
     assert format_duration(seconds) == expected
 
 
-def test_build_didl_metadata_is_valid_xml():
+def test_build_didl_metadata_is_valid_xml() -> None:
     didl = build_didl_metadata(
         "http://h/v.mp4?a=1&b=2", title="My <Video>", upnp_class="object.item.videoItem"
     )

@@ -5,14 +5,14 @@ from urllib.parse import urlsplit
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from .device.remote import (
+from popin_aladdin_api.device.remote import (
     DISCOVERY_UDP_PORT,
     REMOTE_CMD_UDP_PORT,
     REMOTE_REPLY_UDP_PORT,
     REMOTE_TCP_PORT,
     REMOTE_UDP_PORT,
 )
-from .device.renderer import UPNP_PORT
+from popin_aladdin_api.device.renderer import UPNP_PORT
 
 
 class Settings(BaseSettings):
@@ -56,4 +56,5 @@ class Settings(BaseSettings):
         return urlsplit(self.popin_aladdin_host).hostname or self.popin_aladdin_host
 
 
-settings = Settings()
+# 必須の popin_aladdin_host は環境変数から読む。pyright は pydantic-settings の読み込みを知らず、引数の不足と誤検知する。
+settings = Settings()  # pyright: ignore[reportCallIssue]

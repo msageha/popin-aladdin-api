@@ -18,6 +18,12 @@
 !/LICENSE
 !/mise.toml
 !/mise.lock
+# mise.lock が npm: backend のツールの依存の lock をこの下のパスと digest で参照する
+!/.mise/
+!/.mise/locks/
+!/.mise/locks/**
+# mise.local.toml (追跡しない) の lock の sidecar は追跡しない
+/.mise/locks/mise.local/
 !/fnox.toml
 !/.pre-commit-config.yaml
 !/commitlint.config.mjs

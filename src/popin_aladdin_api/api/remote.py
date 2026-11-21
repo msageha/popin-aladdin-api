@@ -2,7 +2,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query
 
-from ..device.models import (
+from popin_aladdin_api.api.deps import RemoteDep, device_lock
+from popin_aladdin_api.api.schemas import (
+    DeeplinkRequest,
+    KeyRequest,
+    LightRequest,
+    PowerOffRequest,
+    TextRequest,
+)
+from popin_aladdin_api.device.models import (
     DiscoveredDevice,
     LightButton,
     ProjectorKey,
@@ -11,14 +19,10 @@ from ..device.models import (
     RemoteDeviceInfo,
     RemoteVersion,
 )
-from ..device.remote import DPAD_KEY_CODES, FOCUS_KEY_CODES, HARDWARE_KEY_CODES
-from .deps import RemoteDep, device_lock
-from .schemas import (
-    DeeplinkRequest,
-    KeyRequest,
-    LightRequest,
-    PowerOffRequest,
-    TextRequest,
+from popin_aladdin_api.device.remote import (
+    DPAD_KEY_CODES,
+    FOCUS_KEY_CODES,
+    HARDWARE_KEY_CODES,
 )
 
 router = APIRouter(tags=["remote"], dependencies=[device_lock])
@@ -63,7 +67,7 @@ async def remote_album(remote: RemoteDep) -> RemoteAlbum:
 
 
 @router.get("/remote/apps/{package}")
-async def remote_app_info(package: PackageName, remote: RemoteDep) -> RemoteAppInfo:
+async def remote_app_info(*, package: PackageName, remote: RemoteDep) -> RemoteAppInfo:
     """アプリがインストールされているかと、その版。"""
     return await remote.app_info(package)
 
@@ -76,6 +80,7 @@ async def remote_device(remote: RemoteDep) -> RemoteDeviceInfo:
 
 @router.get("/discover")
 async def discover(
+    *,
     remote: RemoteDep,
     wait: Annotated[float, Query(ge=0.5, le=15, description="応答を待つ秒数")] = 3.0,
 ) -> list[DiscoveredDevice]:
@@ -84,33 +89,33 @@ async def discover(
 
 
 @router.post("/light")
-async def light(body: LightRequest, remote: RemoteDep) -> LightRequest:
+async def light(*, body: LightRequest, remote: RemoteDep) -> LightRequest:
     for _ in range(body.repeat):
         await remote.light(body.button)
     return body
 
 
 @router.post("/key")
-async def key(body: KeyRequest, remote: RemoteDep) -> KeyRequest:
+async def key(*, body: KeyRequest, remote: RemoteDep) -> KeyRequest:
     for _ in range(body.repeat):
         await remote.press_key(body.button)
     return body
 
 
 @router.post("/keyboard")
-async def keyboard(body: TextRequest, remote: RemoteDep) -> TextRequest:
+async def keyboard(*, body: TextRequest, remote: RemoteDep) -> TextRequest:
     await remote.type_text(body.text)
     return body
 
 
 @router.post("/voice")
-async def voice(body: TextRequest, remote: RemoteDep) -> TextRequest:
+async def voice(*, body: TextRequest, remote: RemoteDep) -> TextRequest:
     await remote.voice_command(body.text)
     return body
 
 
 @router.post("/deeplink")
-async def deeplink(body: DeeplinkRequest, remote: RemoteDep) -> DeeplinkRequest:
+async def deeplink(*, body: DeeplinkRequest, remote: RemoteDep) -> DeeplinkRequest:
     """deeplink をデバイスで開く (アプリ起動)。"""
     await remote.open_deeplink(body.url)
     return body
@@ -129,7 +134,7 @@ async def capture(remote: RemoteDep) -> dict[str, str]:
 
 
 @router.post("/power/off")
-async def power_off(body: PowerOffRequest, remote: RemoteDep) -> dict[str, str]:
+async def power_off(*, body: PowerOffRequest, remote: RemoteDep) -> dict[str, str]:
     """電源を切る。切った後はこの API から再点灯できないので confirm が必要。"""
     if not body.confirm:
         raise HTTPException(

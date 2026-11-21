@@ -1,4 +1,5 @@
-"""popIn Aladdin の独自制御プロトコルを叩く async クライアント。
+"""
+popIn Aladdin の独自制御プロトコルを叩く async クライアント。
 
 公式アプリ Aladdin X (``cc.popin.aladdin.assistant`` 3.6.25) の静的解析に基づく。制御面は 3 つある。
 
@@ -24,12 +25,12 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast, override
 
 from pydantic import BaseModel, ValidationError
 
-from .errors import AladdinConnectionError, AladdinError
-from .models import (
+from popin_aladdin_api.device.errors import AladdinConnectionError, AladdinError
+from popin_aladdin_api.device.models import (
     AlbumFile,
     DiscoveredDevice,
     LightButton,
@@ -61,6 +62,11 @@ JSON_APP_INFO = 16
 ACTION_CONTROL = 20000
 REPLY_SCREENSHOT = 30235
 REPLY_DEVICE_INFO = 30410
+
+# UDP 8100 のデータグラムで ``aladdin`` に続く種別。応答の種別によって、続く JSON の長さのフィールドが 1 バイトか 4 バイトになる。
+_DISCOVERY_KIND_REQUEST = 20
+_DISCOVERY_KIND_1BYTE_LENGTH = 17
+_DISCOVERY_KINDS_4BYTE_LENGTH = (19, 21)
 
 LIGHT_ACTION_CODES: dict[LightButton, int] = {
     LightButton.SWITCH: 31,
@@ -113,7 +119,7 @@ HOME_LONG_PRESS_HOLD = 1.0
 FRAME_HEADER = struct.Struct("<IBB")
 
 
-def build_frame(kind: int, json_type: int, payload: object) -> bytes:
+def build_frame(payload: object, *, kind: int, json_type: int) -> bytes:
     body = json.dumps(payload).encode()
     return FRAME_HEADER.pack(len(body), kind, json_type) + body
 
@@ -126,18 +132,22 @@ class _Datagrams(asyncio.DatagramProtocol):
         self.error: Exception | None = None
         self.closed = asyncio.Event()
 
-    def datagram_received(self, data: bytes, addr: Any) -> None:
+    @override
+    def datagram_received(self, data: bytes, addr: tuple[str | Any, int]) -> None:
         self.received.put_nowait((data, addr[0]))
 
+    @override
     def error_received(self, exc: Exception) -> None:
         self.error = exc
 
+    @override
     def connection_lost(self, exc: Exception | None) -> None:
         self.closed.set()
 
 
 class RemoteClient:
-    def __init__(
+    # 接続先のポートは設定 (settings.py) の項目ごとに個別に受け取る。
+    def __init__(  # noqa: PLR0913
         self,
         host: str,
         *,
@@ -161,34 +171,47 @@ class RemoteClient:
     async def ping(self) -> None:
         """TCP の疎通確認。heartbeat 応答が返らなければ AladdinConnectionError。"""
         await self._send_tcp(
-            [build_frame(FRAME_HEARTBEAT, 0, 1)], reply=(FRAME_HEARTBEAT, None)
+            [build_frame(1, kind=FRAME_HEARTBEAT, json_type=0)],
+            reply=(FRAME_HEARTBEAT, None),
         )
 
     async def light(self, button: LightButton) -> None:
         await self._send_tcp(
             [
                 build_frame(
-                    FRAME_COMMAND,
-                    JSON_REMOTE_CONTROL,
                     {"action": LIGHT_ACTION_CODES[button]},
+                    kind=FRAME_COMMAND,
+                    json_type=JSON_REMOTE_CONTROL,
                 )
             ]
         )
 
     async def type_text(self, text: str) -> None:
         """フォーカス中のオンスクリーン入力欄に文字を入力する。"""
-        await self._send_tcp([build_frame(FRAME_COMMAND, JSON_IME, {"text": text})])
+        await self._send_tcp(
+            [build_frame({"text": text}, kind=FRAME_COMMAND, json_type=JSON_IME)]
+        )
 
     async def voice_command(self, text: str) -> None:
         """音声アシスタントへの発話をテキストとして注入する。"""
         await self._send_tcp(
-            [build_frame(FRAME_COMMAND, JSON_VOICE, {"text": text, "success": True})]
+            [
+                build_frame(
+                    {"text": text, "success": True},
+                    kind=FRAME_COMMAND,
+                    json_type=JSON_VOICE,
+                )
+            ]
         )
 
     async def open_deeplink(self, url: str) -> None:
         """deeplink (アプリの URL scheme や intent) をデバイスで開く。公式アプリのアプリ起動ボタンと同じ。"""
         await self._send_tcp(
-            [build_frame(FRAME_COMMAND, JSON_DEEPLINK, {"deepLink": url})]
+            [
+                build_frame(
+                    {"deepLink": url}, kind=FRAME_COMMAND, json_type=JSON_DEEPLINK
+                )
+            ]
         )
 
     async def version(self) -> RemoteVersion:
@@ -226,12 +249,21 @@ class RemoteClient:
             "totalSpace": 0,
         }
         payload = await self._send_tcp(
-            [self._version_frame(), build_frame(FRAME_COMMAND, JSON_ALBUM, request)],
+            [
+                self._version_frame(),
+                build_frame(request, kind=FRAME_COMMAND, json_type=JSON_ALBUM),
+            ],
             reply=(FRAME_COMMAND, JSON_ALBUM),
         )
-        files = payload.get("list") or []
+        files: object = payload.get("list") or []
         if not isinstance(files, list):
             raise AladdinError(f"album list is not a list: {files!r}")
+        # JSON の object の key は常に str。
+        items = [
+            cast("dict[str, Any]", item)
+            for item in cast("list[object]", files)
+            if isinstance(item, dict)
+        ]
         return _model(
             RemoteAlbum,
             count=payload.get("count"),
@@ -245,8 +277,7 @@ class RemoteClient:
                     size=item.get("size"),
                     type=item.get("type"),
                 )
-                for item in files
-                if isinstance(item, dict)
+                for item in items
             ],
         )
 
@@ -256,7 +287,7 @@ class RemoteClient:
         payload = await self._send_tcp(
             [
                 self._version_frame(),
-                build_frame(FRAME_COMMAND, JSON_APP_INFO, request),
+                build_frame(request, kind=FRAME_COMMAND, json_type=JSON_APP_INFO),
             ],
             reply=(FRAME_COMMAND, JSON_APP_INFO),
         )
@@ -271,8 +302,6 @@ class RemoteClient:
     def _version_frame(self) -> bytes:
         # 公式アプリの Version を Gson が直列化した形。code 10 はアプリが名乗るプロトコル版。
         return build_frame(
-            FRAME_VERSION,
-            0,
             {
                 "code": 10,
                 "type": "JSON",
@@ -282,10 +311,13 @@ class RemoteClient:
                 "freeSpace": 0,
                 "totalSpace": 0,
             },
+            kind=FRAME_VERSION,
+            json_type=0,
         )
 
     async def press_key(self, key: ProjectorKey, *, hold: float = 0.1) -> None:
-        """リモコンキーを 1 回押す。
+        """
+        リモコンキーを 1 回押す。
 
         方向キーは押下 → hold 秒 → 離上、フォーカス調整は押下と離上を連続、HOME 長押しは
         公式アプリと同じ列、ハードキーは単発。
@@ -362,11 +394,12 @@ class RemoteClient:
 
     async def discover(self, wait: float) -> list[DiscoveredDevice]:
         """LAN にブロードキャストし、``wait`` 秒の間に応答した Aladdin を返す。設定した host には依存しない。"""
-        request = (b"aladdin" + bytes([20])).ljust(1024, b"\0")
+        request = (b"aladdin" + bytes([_DISCOVERY_KIND_REQUEST])).ljust(1024, b"\0")
         found: dict[str | None, DiscoveredDevice] = {}
         async with self._udp(
             f"discovery port {self.discovery_udp_port}",
-            local_addr=("0.0.0.0", 0),
+            # 応答は各デバイスからこのソケットへ unicast で届くので、すべての interface で受ける。
+            local_addr=("0.0.0.0", 0),  # noqa: S104
             allow_broadcast=True,
         ) as (udp, protocol):
             udp.sendto(request, ("255.255.255.255", self.discovery_udp_port))
@@ -396,7 +429,7 @@ class RemoteClient:
         # 応答は送信元ポートではなく固定の 16751 に届きうるので、そのポートに bind して送る。
         async with self._udp(
             f"command port {self.host}:{self.cmd_udp_port}",
-            local_addr=("0.0.0.0", self.reply_udp_port),
+            local_addr=("0.0.0.0", self.reply_udp_port),  # noqa: S104
         ) as (udp, protocol):
             udp.sendto(json.dumps(payload).encode(), (device_ip, self.cmd_udp_port))
             if reply_action is None:
@@ -412,10 +445,11 @@ class RemoteClient:
                             reply = json.loads(data)
                         except ValueError:
                             continue
-                        if (
-                            isinstance(reply, dict)
-                            and reply.get("action") == reply_action
-                        ):
+                        if not isinstance(reply, dict):
+                            continue
+                        # JSON の object の key は常に str。
+                        reply = cast("dict[str, Any]", reply)
+                        if reply.get("action") == reply_action:
                             return reply
             except TimeoutError as err:
                 raise AladdinConnectionError(
@@ -439,7 +473,8 @@ class RemoteClient:
     async def _send_tcp(
         self, frames: list[bytes], *, reply: tuple[int, int | None] | None = None
     ) -> dict[str, Any]:
-        """接続を 1 つ開いて ``frames`` を順に送り、閉じる。
+        """
+        接続を 1 つ開いて ``frames`` を順に送り、閉じる。
 
         ``reply`` (フレーム種別, JSON 種別。None は不問) を指定すると、一致するフレームが届くまで
         読み (heartbeat や先行するハンドシェイク応答は読み飛ばす)、その JSON を返す。
@@ -453,7 +488,7 @@ class RemoteClient:
                         writer.write(frame)
                     await writer.drain()
                     if reply is not None:
-                        body = await _read_until(reader, reply)
+                        body = await _read_until(reader, reply=reply)
                     writer.close()
                     await writer.wait_closed()
                 except BaseException:
@@ -474,16 +509,25 @@ class RemoteClient:
             raise AladdinError(f"control reply is not JSON: {body[:200]!r}") from err
         if not isinstance(payload, dict):
             raise AladdinError(f"control reply is not an object: {body[:200]!r}")
-        return payload
+        # JSON の object の key は常に str。
+        return cast("dict[str, Any]", payload)
 
     @asynccontextmanager
     async def _udp(
-        self, target: str, **endpoint: Any
+        self,
+        target: str,
+        *,
+        local_addr: tuple[str, int] | None = None,
+        remote_addr: tuple[str, int] | None = None,
+        allow_broadcast: bool = False,
     ) -> AsyncGenerator[tuple[asyncio.DatagramTransport, _Datagrams]]:
         loop = asyncio.get_running_loop()
         try:
             transport, protocol = await loop.create_datagram_endpoint(
-                _Datagrams, **endpoint
+                _Datagrams,
+                local_addr=local_addr,
+                remote_addr=remote_addr,
+                allow_broadcast=allow_broadcast,
             )
         except OSError as err:
             raise AladdinConnectionError(
@@ -516,7 +560,7 @@ class RemoteClient:
 
 
 async def _read_until(
-    reader: asyncio.StreamReader, reply: tuple[int, int | None]
+    reader: asyncio.StreamReader, *, reply: tuple[int, int | None]
 ) -> bytes:
     kind, json_type = reply
     while True:
@@ -529,7 +573,8 @@ async def _read_until(
 
 
 def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
-    """``aladdin`` + 種別 1 バイト + 長さ + JSON ``{"success": .., "data": {...}}`` を解析する。
+    """
+    ``aladdin`` + 種別 1 バイト + 長さ + JSON ``{"success": .., "data": {...}}`` を解析する。
 
     長さは種別 17 では 1 バイト、それ以外 (19 / 21) では big-endian 4 バイト。形式や値の型が
     合わないデータグラム (他機器の応答など) は None。
@@ -538,10 +583,10 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
     if not data.startswith(prefix) or len(data) < len(prefix) + 2:
         return None
     kind = data[len(prefix)]
-    if kind == 17:
+    if kind == _DISCOVERY_KIND_1BYTE_LENGTH:
         start = len(prefix) + 2
         length = data[len(prefix) + 1]
-    elif kind in (19, 21):
+    elif kind in _DISCOVERY_KINDS_4BYTE_LENGTH:
         start = len(prefix) + 5
         length = int.from_bytes(data[len(prefix) + 1 : start], "big")
     else:
@@ -550,9 +595,13 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
         reply = json.loads(data[start : start + length])
     except ValueError:
         return None
-    device = reply.get("data") if isinstance(reply, dict) else None
+    # JSON の object の key は常に str。
+    device = (
+        cast("dict[str, Any]", reply).get("data") if isinstance(reply, dict) else None
+    )
     if not isinstance(device, dict):
         return None
+    device = cast("dict[str, Any]", device)
     try:
         return DiscoveredDevice(
             ip_address=device.get("ipAddress"),
@@ -569,9 +618,9 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
         return None
 
 
-def _model[T: BaseModel](model_type: type[T], /, **fields: Any) -> T:
+def _model[T: BaseModel](model_type: type[T], /, **fields: object) -> T:
     """デバイスの応答値をモデルにする。型が合わなければ AladdinError (500 ではなく 502 にする)。"""
     try:
-        return model_type(**fields)
+        return model_type.model_validate(fields)
     except ValidationError as err:
         raise AladdinError(f"unexpected value in device reply: {err}") from err

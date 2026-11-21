@@ -1,4 +1,5 @@
-"""popIn Aladdin の UPnP/DLNA MediaRenderer ("Aladdin 2"、Platinum 実装) を叩く async クライアント。
+"""
+popIn Aladdin の UPnP/DLNA MediaRenderer ("Aladdin 2"、Platinum 実装) を叩く async クライアント。
 
 device description (``http://<host>:1481/``) から各 service の controlURL を解決し、
 SOAP でアクションを呼ぶ。UDN が機体ごとに異なるため controlURL は決め打ちしない。
@@ -11,8 +12,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .errors import AladdinConnectionError, AladdinError
-from .models import (
+from popin_aladdin_api.device.errors import AladdinConnectionError, AladdinError
+from popin_aladdin_api.device.models import (
     DeviceDescription,
     DeviceInfo,
     MediaInfo,
@@ -22,7 +23,7 @@ from .models import (
     RendererStatus,
     TransportInfo,
 )
-from .upnp import (
+from popin_aladdin_api.device.upnp import (
     build_didl_metadata,
     build_envelope,
     format_duration,
@@ -34,6 +35,7 @@ from .upnp import (
 UPNP_PORT = 1481
 DEFAULT_CAST_TITLE = "popin-aladdin-api"
 DEFAULT_UPNP_CLASS = "object.item.videoItem"
+MAX_VOLUME = 100
 
 AV_TRANSPORT = "AVTransport"
 RENDERING_CONTROL = "RenderingControl"
@@ -68,19 +70,19 @@ class RendererClient:
     async def discover(self) -> DeviceDescription:
         """device description を取得する。UDN と controlURL は機体固有だが不変なのでプロセス生存中はキャッシュする。"""
         if self._description is None:
-            response = await self._request("GET", self.description_url)
+            response = await self._request("GET", url=self.description_url)
             if response.is_error:
                 raise AladdinError(
                     f"device description at {self.description_url} returned "
                     f"HTTP {response.status_code}"
                 )
             self._description = parse_device_description(
-                response.text, self.description_url
+                response.text, base_url=self.description_url
             )
         return self._description
 
     async def invoke(
-        self, service: str, action: str, args: Mapping[str, Any]
+        self, service: str, *, action: str, args: Mapping[str, Any]
     ) -> dict[str, str]:
         """``service`` の SOAP ``action`` を呼び、出力引数を返す。"""
         description = await self.discover()
@@ -92,18 +94,27 @@ class RendererClient:
             )
         response = await self._request(
             "POST",
-            target.control_url,
-            content=build_envelope(target.service_type, action, args),
+            url=target.control_url,
+            content=build_envelope(target.service_type, action=action, args=args),
             headers={
                 "Content-Type": 'text/xml; charset="utf-8"',
                 "SOAPACTION": f'"{target.service_type}#{action}"',
             },
         )
-        return parse_response(response.text, action)
+        return parse_response(response.text, action=action)
 
-    async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    async def _request(
+        self,
+        method: str,
+        *,
+        url: str,
+        content: str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> httpx.Response:
         try:
-            return await self._http.request(method, url, **kwargs)
+            return await self._http.request(
+                method, url, content=content, headers=headers
+            )
         except httpx.InvalidURL as err:
             raise AladdinError(f"invalid URL in device description: {url!r}") from err
         except httpx.HTTPError as err:
@@ -120,7 +131,9 @@ class RendererClient:
         )
 
     async def transport_info(self) -> TransportInfo:
-        result = await self.invoke(AV_TRANSPORT, "GetTransportInfo", _INSTANCE)
+        result = await self.invoke(
+            AV_TRANSPORT, action="GetTransportInfo", args=_INSTANCE
+        )
         return TransportInfo(
             state=result.get("CurrentTransportState"),
             status=result.get("CurrentTransportStatus"),
@@ -128,9 +141,11 @@ class RendererClient:
         )
 
     async def position_info(self) -> PositionInfo:
-        result = await self.invoke(AV_TRANSPORT, "GetPositionInfo", _INSTANCE)
+        result = await self.invoke(
+            AV_TRANSPORT, action="GetPositionInfo", args=_INSTANCE
+        )
         return PositionInfo(
-            track=_int(result, "Track"),
+            track=_int(result, name="Track"),
             track_duration=result.get("TrackDuration"),
             track_duration_seconds=parse_duration(result.get("TrackDuration")),
             track_uri=result.get("TrackURI") or None,
@@ -141,9 +156,9 @@ class RendererClient:
         )
 
     async def media_info(self) -> MediaInfo:
-        result = await self.invoke(AV_TRANSPORT, "GetMediaInfo", _INSTANCE)
+        result = await self.invoke(AV_TRANSPORT, action="GetMediaInfo", args=_INSTANCE)
         return MediaInfo(
-            nr_tracks=_int(result, "NrTracks"),
+            nr_tracks=_int(result, name="NrTracks"),
             media_duration=result.get("MediaDuration"),
             current_uri=result.get("CurrentURI") or None,
             current_uri_metadata=result.get("CurrentURIMetaData") or None,
@@ -151,21 +166,25 @@ class RendererClient:
         )
 
     async def protocol_info(self) -> ProtocolInfo:
-        result = await self.invoke(CONNECTION_MANAGER, "GetProtocolInfo", {})
+        result = await self.invoke(
+            CONNECTION_MANAGER, action="GetProtocolInfo", args={}
+        )
         return ProtocolInfo(
             source=_csv(result.get("Source")), sink=_csv(result.get("Sink"))
         )
 
     async def get_volume(self) -> int:
-        result = await self.invoke(RENDERING_CONTROL, "GetVolume", _MASTER)
-        volume = _int(result, "CurrentVolume")
-        if not 0 <= volume <= 100:
-            raise AladdinError(f"CurrentVolume is out of range 0..100: {volume}")
+        result = await self.invoke(RENDERING_CONTROL, action="GetVolume", args=_MASTER)
+        volume = _int(result, name="CurrentVolume")
+        if not 0 <= volume <= MAX_VOLUME:
+            raise AladdinError(
+                f"CurrentVolume is out of range 0..{MAX_VOLUME}: {volume}"
+            )
         return volume
 
     async def get_mute(self) -> bool:
-        result = await self.invoke(RENDERING_CONTROL, "GetMute", _MASTER)
-        return _bool(result, "CurrentMute")
+        result = await self.invoke(RENDERING_CONTROL, action="GetMute", args=_MASTER)
+        return _bool(result, name="CurrentMute")
 
     async def status(self) -> RendererStatus:
         transport = await self.transport_info()
@@ -182,30 +201,32 @@ class RendererClient:
         )
 
     async def play(self, speed: str = "1") -> None:
-        await self.invoke(AV_TRANSPORT, "Play", {**_INSTANCE, "Speed": speed})
+        await self.invoke(
+            AV_TRANSPORT, action="Play", args={**_INSTANCE, "Speed": speed}
+        )
 
     async def pause(self) -> None:
-        await self.invoke(AV_TRANSPORT, "Pause", _INSTANCE)
+        await self.invoke(AV_TRANSPORT, action="Pause", args=_INSTANCE)
 
     async def stop(self) -> None:
-        await self.invoke(AV_TRANSPORT, "Stop", _INSTANCE)
+        await self.invoke(AV_TRANSPORT, action="Stop", args=_INSTANCE)
 
     async def next(self) -> None:
-        await self.invoke(AV_TRANSPORT, "Next", _INSTANCE)
+        await self.invoke(AV_TRANSPORT, action="Next", args=_INSTANCE)
 
     async def previous(self) -> None:
-        await self.invoke(AV_TRANSPORT, "Previous", _INSTANCE)
+        await self.invoke(AV_TRANSPORT, action="Previous", args=_INSTANCE)
 
     async def seek(self, seconds: float) -> None:
         await self.invoke(
             AV_TRANSPORT,
-            "Seek",
-            {**_INSTANCE, "Unit": "REL_TIME", "Target": format_duration(seconds)},
+            action="Seek",
+            args={**_INSTANCE, "Unit": "REL_TIME", "Target": format_duration(seconds)},
         )
 
     async def set_play_mode(self, mode: PlayMode) -> None:
         await self.invoke(
-            AV_TRANSPORT, "SetPlayMode", {**_INSTANCE, "NewPlayMode": mode}
+            AV_TRANSPORT, action="SetPlayMode", args={**_INSTANCE, "NewPlayMode": mode}
         )
 
     async def cast(
@@ -222,24 +243,28 @@ class RendererClient:
             metadata = build_didl_metadata(uri, title=title, upnp_class=upnp_class)
         await self.invoke(
             AV_TRANSPORT,
-            "SetAVTransportURI",
-            {**_INSTANCE, "CurrentURI": uri, "CurrentURIMetaData": metadata},
+            action="SetAVTransportURI",
+            args={**_INSTANCE, "CurrentURI": uri, "CurrentURIMetaData": metadata},
         )
         if autoplay:
             await self.play()
 
     async def set_volume(self, volume: int) -> None:
         await self.invoke(
-            RENDERING_CONTROL, "SetVolume", {**_MASTER, "DesiredVolume": volume}
+            RENDERING_CONTROL,
+            action="SetVolume",
+            args={**_MASTER, "DesiredVolume": volume},
         )
 
-    async def set_mute(self, mute: bool) -> None:
+    async def set_mute(self, *, mute: bool) -> None:
         await self.invoke(
-            RENDERING_CONTROL, "SetMute", {**_MASTER, "DesiredMute": int(mute)}
+            RENDERING_CONTROL,
+            action="SetMute",
+            args={**_MASTER, "DesiredMute": int(mute)},
         )
 
 
-def _int(result: Mapping[str, str], name: str) -> int:
+def _int(result: Mapping[str, str], *, name: str) -> int:
     try:
         return int(result[name])
     except (KeyError, ValueError) as err:
@@ -248,7 +273,7 @@ def _int(result: Mapping[str, str], name: str) -> int:
         ) from err
 
 
-def _bool(result: Mapping[str, str], name: str) -> bool:
+def _bool(result: Mapping[str, str], *, name: str) -> bool:
     value = result.get(name, "").strip().lower()
     if value in ("1", "true", "yes"):
         return True
