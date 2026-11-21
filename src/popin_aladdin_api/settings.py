@@ -1,9 +1,9 @@
-"""環境変数 / ``.env`` から読む設定。import 時に検証し、不正なら起動前に失敗する。"""
+"""環境変数から読む設定。import 時に検証し、不正なら起動前に失敗する。"""
 
 from urllib.parse import urlsplit
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 from .device.remote import (
     DISCOVERY_UDP_PORT,
@@ -16,11 +16,8 @@ from .device.renderer import UPNP_PORT
 
 
 class Settings(BaseSettings):
-    # pydantic-settings は既定で .env の未知キーを拒否するため、他用途のキーが混ざっていても起動できるよう無視する。
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
     popin_aladdin_host: str = Field(
-        default="http://172.16.1.113",
+        min_length=1,
         description="デバイスの URL またはホスト名 / IP。ポートは各 *_PORT で指定する",
     )
     upnp_port: int = Field(

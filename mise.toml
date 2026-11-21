@@ -14,12 +14,7 @@ hadolint = "2.15.1"
 shellcheck = "0.11.0"
 
 [env]
-# 接続先 (POPIN_ALADDIN_HOST 等) はリポジトリ直下の .env かここで定義する。ローカルだけの値は
-# mise.local.toml に書くと上書きできる (ホワイトリスト方式の .gitignore により追跡されない)。
-#
-# 例:
-# POPIN_ALADDIN_HOST = "http://192.168.1.20"
-# _.file = ".env"  # .env ファイルを読み込む
+POPIN_ALADDIN_HOST = "http://172.16.1.113"
 
 [tasks.dev]
 description = "Run the API server with auto-reload on http://127.0.0.1:8000"
@@ -49,8 +44,9 @@ description = "Build the Docker image popin-aladdin-api:latest"
 run = "docker build -t popin-aladdin-api:latest ."
 
 [tasks.run-image]
-description = "Run the Docker image on port 8000 (passes .env with --env-file if present)"
-run = "docker run --rm -p 8000:8000 $([ -f .env ] && echo --env-file .env) popin-aladdin-api:latest"
+description = "Run the Docker image on port 8000 with the settings from the environment"
+# -e NAME (値なし) は設定されている変数だけを渡すので、未設定の任意項目にはアプリ (settings.py) の既定値が使われる
+run = "docker run --rm -p 8000:8000 -e POPIN_ALADDIN_HOST -e UPNP_PORT -e DESCRIPTION_PATH -e CONTROL_TCP_PORT -e CONTROL_UDP_PORT -e CONTROL_CMD_UDP_PORT -e CONTROL_REPLY_UDP_PORT -e DISCOVERY_UDP_PORT -e TIMEOUT popin-aladdin-api:latest"
 
 [tasks.clean]
 description = "Remove caches and coverage artifacts"

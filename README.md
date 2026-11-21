@@ -25,24 +25,25 @@ mise install  # tools をインストールし、git hooks (prek) を登録す�
 Python 本体 (`.python-version` の 3.14) と `.venv` は、最初の `uv run` (`mise run dev` / `mise run test` 等) で uv が
 `uv.lock` どおりに用意します。
 
-接続先を変えるときはリポジトリ直下に `.env` を作って指定します。全て省略可で、既定値は次のとおりです。
+設定は環境変数で渡します。接続先のデバイス (`POPIN_ALADDIN_HOST`: URL またはホスト名 / IP。ポートは含めない) は
+必須で、`mise.toml` の `[env]` で設定します。mise の `[env]` はシェルの同名の変数より優先されるので、手元で変えるときは
+git 管理外の `mise.local.toml` の `[env]` に書いてください。ほかの設定値にはアプリ側に既定値があり、変えるときだけ環境変数で渡します。
 
-| 変数                     | 既定値                | 説明                                                                                  |
-| ------------------------ | --------------------- | ------------------------------------------------------------------------------------- |
-| `POPIN_ALADDIN_HOST`     | `http://172.16.1.113` | デバイスの URL またはホスト名 / IP (ポートは含めない)                                 |
-| `UPNP_PORT`              | `1481`                | UPnP/DLNA MediaRenderer のポート                                                      |
-| `DESCRIPTION_PATH`       | `/`                   | UPnP device description のパス                                                        |
-| `CONTROL_TCP_PORT`       | `30913`               | 独自プロトコル TCP (ライト・文字入力・音声・deeplink・照会)                           |
-| `CONTROL_UDP_PORT`       | `16735`               | 独自プロトコル UDP (方向キー・ハードキー)                                             |
-| `CONTROL_CMD_UDP_PORT`   | `16750`               | 独自プロトコル UDP JSON コマンド (スクリーンショット・メモリ解放・実行時情報・電源断) |
-| `CONTROL_REPLY_UDP_PORT` | `16751`               | UDP JSON コマンドの応答を受け取るこのサーバー側のポート                               |
-| `DISCOVERY_UDP_PORT`     | `8100`                | デバイス発見のブロードキャスト先ポート                                                |
-| `TIMEOUT`                | `10`                  | デバイスへの各リクエストのタイムアウト (秒)                                           |
+| 変数                     | 既定値  | 説明                                                                                  |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `UPNP_PORT`              | `1481`  | UPnP/DLNA MediaRenderer のポート                                                      |
+| `DESCRIPTION_PATH`       | `/`     | UPnP device description のパス                                                        |
+| `CONTROL_TCP_PORT`       | `30913` | 独自プロトコル TCP (ライト・文字入力・音声・deeplink・照会)                           |
+| `CONTROL_UDP_PORT`       | `16735` | 独自プロトコル UDP (方向キー・ハードキー)                                             |
+| `CONTROL_CMD_UDP_PORT`   | `16750` | 独自プロトコル UDP JSON コマンド (スクリーンショット・メモリ解放・実行時情報・電源断) |
+| `CONTROL_REPLY_UDP_PORT` | `16751` | UDP JSON コマンドの応答を受け取るこのサーバー側のポート                               |
+| `DISCOVERY_UDP_PORT`     | `8100`  | デバイス発見のブロードキャスト先ポート                                                |
+| `TIMEOUT`                | `10`    | デバイスへの各リクエストのタイムアウト (秒)                                           |
 
 ## 起動
 
 ```bash
-mise run dev      # uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000
+mise run dev      # mise.toml の [env] を渡し、uvicorn を --reload 付きで 127.0.0.1:8000 に起動する
 ```
 
 Swagger UI: http://127.0.0.1:8000/docs
@@ -51,10 +52,12 @@ Swagger UI: http://127.0.0.1:8000/docs
 
 ```bash
 mise run build-image  # docker build -t popin-aladdin-api:latest .
-mise run run-image    # docker run --rm -p 8000:8000 [--env-file .env] popin-aladdin-api:latest
+mise run run-image    # 設定されている環境変数を -e で渡して docker run する
 ```
 
-`.env` があれば `--env-file` でコンテナに渡します。UDP JSON コマンドの応答 (`/api/capture`、`/api/remote/device`) は
+mise を使わずに起動する場合 (docker compose 等) は、`POPIN_ALADDIN_HOST` を環境変数で渡してください。
+
+UDP JSON コマンドの応答 (`/api/capture`、`/api/remote/device`) は
 デバイスからこのサーバーの `CONTROL_REPLY_UDP_PORT` (既定 16751) に届くため、bridge ネットワークでは
 `-p 16751:16751/udp` の公開が必要です。`/api/discover` のブロードキャストは bridge ネットワークからは LAN に届かないので、
 `--network host` で動かすか、ホスト上で直接起動してください。
@@ -244,7 +247,7 @@ required status check の名前になります。
 
 - `prek`: `mise.lock` 通りのツールで `.pre-commit-config.yaml` の全 hook を `prek run --all-files` で実行する。
 - `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
-- `verify`: `uv run --locked pytest` でテストを実行する。
+- `verify`: `mise exec -- uv run --locked pytest` でテストを実行する。
 
 main への push では実行しません (main は PR 必須で、変更は PR の CI で検証してから merge します)。
 workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョンをコメントで併記します。
@@ -355,7 +358,7 @@ unified diff を表示します。差分にはこのリポジトリ固有の変�
 
 ```
 src/popin_aladdin_api/
-  settings.py        環境変数 / .env の設定 (pydantic-settings)
+  settings.py        環境変数の設定 (pydantic-settings)
   main.py            FastAPI アプリ、lifespan、device 層の例外 → HTTP status
   device/            FastAPI 非依存のデバイス制御層 (async)
     renderer.py      UPnP/DLNA MediaRenderer クライアント (httpx)
@@ -482,7 +485,7 @@ UDP 16737 (タッチマウス) も対象外です。
 - 同一サブネットからの利用を想定しています。認証はありません。
 - ファームウェアや機体によって UDN・ポート・公開サービスが異なる場合があります。
   UPnP のパスは device description から解決するため多くは自動追従しますが、
-  独自プロトコルのポートは `.env` で変更してください。
+  独自プロトコルのポートは環境変数 (`CONTROL_*_PORT`) で変更してください。
 - エンドポイント一覧で ※ を付けたコマンドは公式アプリの静的解析に基づき、実機 (popIn Aladdin 2) での
   動作は未確認です。UDP は送信の成否しか分からないため、応答を待たないコマンド (`/api/memory/free`、
   `/api/power/off`、`/api/key`) はデバイスが停止していても 200 を返します。
@@ -546,7 +549,7 @@ Check formatting (ruff format --check), lint (ruff check) and types (ty check)
 
 - **Usage:** `run-image`
 
-Run the Docker image on port 8000 (passes .env with --env-file if present)
+Run the Docker image on port 8000 with the settings from the environment
 
 ## `template-diff`
 
