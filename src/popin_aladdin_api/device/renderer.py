@@ -6,6 +6,7 @@ SOAP でアクションを呼ぶ。UDN が機体ごとに異なるため control
 認証は無い。並行呼び出しは直列化しないので、呼び出し側で制御する。
 """
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any, Self
 from urllib.parse import urljoin
@@ -187,17 +188,29 @@ class RendererClient:
         return _bool(result, name="CurrentMute")
 
     async def status(self) -> RendererStatus:
-        transport = await self.transport_info()
-        position = await self.position_info()
-        media = await self.media_info()
+        # 未取得の device description を各呼び出しが並行に取りに行かないよう、先に取得しておく。
+        await self.discover()
+        tasks = (
+            transport := asyncio.create_task(self.transport_info()),
+            position := asyncio.create_task(self.position_info()),
+            media := asyncio.create_task(self.media_info()),
+            volume := asyncio.create_task(self.get_volume()),
+            mute := asyncio.create_task(self.get_mute()),
+        )
+        # 1 つが失敗しても残りを取り消さず、全部の応答を待つ。送信済みのリクエストは取り消しても
+        # デバイス側で処理が続くので、待たずに戻ると呼び出し側のロックを解いた後の操作と重なる。
+        await asyncio.gather(*tasks, return_exceptions=True)
+        # 複数が失敗したときは、到着順によらず呼び出し順で最初の失敗を投げる。
+        for task in tasks:
+            task.result()
         return RendererStatus(
-            state=transport.state,
-            status=transport.status,
-            volume=await self.get_volume(),
-            mute=await self.get_mute(),
-            current_uri=media.current_uri,
-            track_duration_seconds=position.track_duration_seconds,
-            position_seconds=position.rel_time_seconds,
+            state=transport.result().state,
+            status=transport.result().status,
+            volume=volume.result(),
+            mute=mute.result(),
+            current_uri=media.result().current_uri,
+            track_duration_seconds=position.result().track_duration_seconds,
+            position_seconds=position.result().rel_time_seconds,
         )
 
     async def play(self, speed: str = "1") -> None:
