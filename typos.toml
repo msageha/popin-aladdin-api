@@ -5,3 +5,5 @@ locale = "en-us"
 [default.extend-identifiers]
 UPnP = "UPnP"
 UPnPError = "UPnPError"
+# Renovate の option 名で、英綴りのまま書く必要がある
+minimumReleaseAgeBehaviour = "minimumReleaseAgeBehaviour"

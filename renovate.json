@@ -11,6 +11,10 @@
   "pre-commit": {
     "enabled": true
   },
+  "pyenv": {
+    "description": ".python-version の Python の minor は、依存とツールの対応を確かめてから手で上げる",
+    "enabled": false
+  },
   "minimumReleaseAge": "7 days",
   "platformAutomerge": false,
   "schedule": ["before 9am on monday"],
@@ -22,23 +26,28 @@
       "enabled": false
     },
     {
+      "description": "docker datasource が公開日時を取得できるのは Docker Hub だけで、Dockerfile のベースイメージ (GHCR・GCR) は minimumReleaseAge を判定できず、既定 (timestamp-required) では更新が無期限に保留される。公開日時が無いときは age check を省く",
+      "matchDatasources": ["docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
       "description": "PR の乱立を防ぐため、major 以外 (minor/patch/pin/digest) の更新は manager・エコシステム横断で 1 つの PR に集約する。major はグルーピングせず個別 PR で人手レビューする",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "groupName": "all non-major dependencies",
       "groupSlug": "all-minor-patch"
     },
     {
-      "description": "patch/minor は minimumReleaseAge (7日) 経過後、CI green を条件に自動マージする。merge は Renovate 自身が全 status check の成功を確認して行う (platformAutomerge: false)。GitHub の auto-merge は required status check の無いリポジトリでは CI 完了を待たずに merge するため使わない。major は供給網攻撃対策の猶予期間だけでは不十分なため対象外とし、人手レビューを必須とする",
+      "description": "ベースイメージの digest 更新は自動マージの対象外なので、上の集約 PR に入ると、自動マージされるはずの minor/patch まで止まる。別の PR に分けて人手でレビューする",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "docker base image digests",
+      "groupSlug": "docker-base-image-digests"
+    },
+    {
+      "description": "patch/minor は minimumReleaseAge (7日) 経過後 (公開日時が無い docker の更新は上の規則により猶予なし)、CI green を条件に自動マージする。merge は Renovate 自身が全 status check の成功を確認して行う (platformAutomerge: false)。GitHub の auto-merge は required status check の無いリポジトリでは CI 完了を待たずに merge するため使わない。major は供給網攻撃対策の猶予期間だけでは不十分なため対象外とし、人手レビューを必須とする",
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true,
       "automergeType": "pr"
-    },
-    {
-      "description": "Dockerfile のベースイメージ (docker datasource) は automerge しない。builder (uv:python3.14-*) の tag は docker versioning で解釈できず Renovate が触れないため、runner (python:3.14-*) だけが 3.15 へ minor 更新されると builder で作った .venv が runner で動かなくなる。automerge 対象外の更新が混ざると group 全体が automerge されなくなるため通常 group からも分離する",
-      "matchDatasources": ["docker"],
-      "groupName": "docker base images",
-      "groupSlug": "docker-base-images",
-      "automerge": false
     },
     {
       "description": "lock file maintenance には release timestamp が無く、minimumReleaseAge の判定が常に pending になる。7 日の制約は pyproject.toml の exclude-newer で守る。mise.lock の更新は mise.toml で固定した版の配布物の情報に限られる。CI が green なら自動 merge する",

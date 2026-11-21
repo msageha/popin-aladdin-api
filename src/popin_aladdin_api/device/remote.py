@@ -458,7 +458,7 @@ class RemoteClient:
                 ) from err
 
     async def _resolve_host(self) -> str:
-        """host を IPv4 アドレスにする。UDP の sendto は名前解決しない (uvloop は ValueError) ので先に解決する。"""
+        """host を IPv4 アドレスにする。datagram transport の sendto にホスト名を渡すと、標準の event loop は同期の名前解決で loop を止め、uvloop は ValueError を出すので、先に非同期で解決する。"""
         loop = asyncio.get_running_loop()
         try:
             infos = await loop.getaddrinfo(
