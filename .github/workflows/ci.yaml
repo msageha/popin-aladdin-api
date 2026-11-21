@@ -14,9 +14,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# job 名がそのまま required status check の名前になる (README「GitHub リポジトリ設定」参照)。
+# job の name がそのまま required status check の名前になる (README「GitHub リポジトリ設定」参照)。
 jobs:
   prek:
+    name: prek
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -33,7 +34,16 @@ jobs:
       - name: Run prek
         run: mise exec -- prek run --all-files
 
+      # prek の zizmor hook は token が無く offline audit だけになるので、online audit
+      # (impostor-commit・known-vulnerable-actions 等) を含めてここで実行する。
+      # token は他の hook に渡さないよう、この step だけに渡す
+      - name: Run zizmor with online audits
+        run: mise exec -- zizmor --persona auditor --strict-collection .
+        env:
+          ZIZMOR_GITHUB_TOKEN: ${{ github.token }}
+
   gitleaks:
+    name: gitleaks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,6 +61,7 @@ jobs:
         run: mise exec -- gitleaks git --redact -v .
 
   verify:
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

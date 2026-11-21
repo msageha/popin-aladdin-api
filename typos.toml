@@ -1,0 +1,7 @@
+[default]
+locale = "en-us"
+
+# typos は UPnP を U / Pn / P に分けて読み、Pn を On の typo と判定するため、識別子として許可する
+[default.extend-identifiers]
+UPnP = "UPnP"
+UPnPError = "UPnPError"

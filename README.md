@@ -195,7 +195,7 @@ curl -X POST http://127.0.0.1:8000/api/soap \
 
 ## 開発
 
-ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / gitleaks / fnox) は `mise.toml` の `[tools]` で
+ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / typos / zizmor / gitleaks / fnox) は `mise.toml` の `[tools]` で
 exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。CI (`ci.yaml`) も
 ローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。`[tools]` を手で変更したら
 `mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の
@@ -208,7 +208,7 @@ exact version に pin し、`mise.lock` でプラットフォームごとの URL
 mise run format                     # ruff format
 mise run lint                       # ruff format --check + ruff check + ty check
 mise run test                       # coverage run -m pytest + report
-mise exec -- prek run --all-files   # pre-commit hooks を全ファイルに対して実行する (CI の prek job と同じ)
+mise exec -- prek run --all-files   # pre-commit hooks を全ファイルに対して実行する (CI の prek job の online audit 以外と同じ)
 ```
 
 テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで
@@ -226,11 +226,21 @@ hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/p
 - [ruff](https://docs.astral.sh/ruff/) (format + lint) と [ty](https://docs.astral.sh/ty/) (型チェック) は
   `uv run --locked` で `uv.lock` のバージョンを使い、pre-commit 側と二重管理しません。`uv.lock` が
   `pyproject.toml` に追従していないと hook (と CI) がここで失敗します。
-- [dprint](https://dprint.dev/): json / markdown / toml / yaml のフォーマッタ。plugin の WASM URL は
+- [dprint](https://dprint.dev/): json / markdown / toml / yaml / Dockerfile のフォーマッタ。plugin の WASM URL は
   `dprint.json` に `url@sha256` の checksum 付きで pin します。
 - [actionlint](https://github.com/rhysd/actionlint): workflow の静的検査。`run:` スクリプトの検査に
   [shellcheck](https://github.com/koalaman/shellcheck) を使います。
-- [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。
+- [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。`.hadolint.yaml` で style を含む全 severity を
+  失敗にし、ベースイメージの registry を docker.io / ghcr.io に限り、OCI label (`org.opencontainers.image.source` /
+  `licenses`) を必須にしています。`label-schema` に無い label は拒否するので、label を足すときはそこにも足します。
+  Dockerfile 内の `# hadolint ignore=` は無効にしているので、除外が要るときは `.hadolint.yaml` の `ignored` に書きます。
+- [typos](https://github.com/crate-ci/typos): 英単語の typo 検査。`typos.toml` で綴りを米国英語に統一しています。
+  誤検知は `typos.toml` の `extend-identifiers` (識別子) か `extend-words` (単語) に足して除外します。
+- [zizmor](https://docs.zizmor.sh/): workflow と `.pre-commit-config.yaml` のセキュリティ監査。`--persona auditor` で
+  false positive を含む全 finding を、`--strict-collection` で解析できない入力を失敗にします。GitHub API を使う
+  online audit (impostor-commit 等) は token があるときだけ走るため、CI の `prek` job は `ZIZMOR_GITHUB_TOKEN` を
+  渡した専用 step でも実行します。ローカルで同じ範囲を監査するには
+  `ZIZMOR_GITHUB_TOKEN=$(gh auth token) mise exec -- zizmor --persona auditor --strict-collection .` を実行します。
 - [gitleaks](https://github.com/gitleaks/gitleaks): シークレットスキャン。pre-commit hook が staged 差分を、
   CI の `gitleaks` job がコミット履歴全体を対象にします。
 - [commitlint](https://commitlint.js.org/): commit message を
@@ -242,10 +252,11 @@ hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/p
 
 ### CI
 
-`.github/workflows/ci.yaml` は pull request 時に以下の job を並列実行します。job 名がそのまま
+`.github/workflows/ci.yaml` は pull request 時に以下の job を並列実行します。job の `name` がそのまま
 required status check の名前になります。
 
 - `prek`: `mise.lock` 通りのツールで `.pre-commit-config.yaml` の全 hook を `prek run --all-files` で実行する。
+  続けて、online audit を含めた zizmor を token 付きで実行する。
 - `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
 - `verify`: `mise exec -- uv run --locked pytest` でテストを実行する。
 
@@ -270,7 +281,7 @@ Renovate 自身が自動マージします (`platformAutomerge: false`)。major 
 ### GitHub リポジトリ設定
 
 ファイルとして管理できないリポジトリ設定です。public リポジトリなので ruleset と secret scanning が使えます。
-required checks は `ci.yaml` の job 名 (`prek` / `gitleaks` / `verify`) に合わせます。
+required checks は `ci.yaml` の job の `name` (`prek` / `gitleaks` / `verify`) に合わせます。
 
 ```sh
 REPO=msageha/popin-aladdin-api
