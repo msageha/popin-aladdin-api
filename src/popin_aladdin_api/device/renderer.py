@@ -274,12 +274,13 @@ def _int(result: Mapping[str, str], *, name: str) -> int:
 
 
 def _bool(result: Mapping[str, str], *, name: str) -> bool:
-    value = result.get(name, "").strip().lower()
-    if value in ("1", "true", "yes"):
-        return True
-    if value in ("0", "false", "no"):
-        return False
-    raise AladdinError(f"{name} is missing or not a boolean: {value!r}")
+    match result.get(name, "").strip().lower():
+        case "1" | "true" | "yes":
+            return True
+        case "0" | "false" | "no":
+            return False
+        case value:
+            raise AladdinError(f"{name} is missing or not a boolean: {value!r}")
 
 
 def _csv(value: str | None) -> list[str]:

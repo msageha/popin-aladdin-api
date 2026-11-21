@@ -7,9 +7,11 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
-  "fastapi>=0.121",
+  # 下限は `type` 文の alias に包んだ Depends / Path を解釈する版。
+  "fastapi>=0.128.2",
   "httpx>=0.27",
-  "pydantic>=2.6",
+  # 下限は Python 3.14 に対応した版。
+  "pydantic>=2.12",
   "pydantic-settings>=2.2",
   "uvicorn>=0.51.0",
 ]

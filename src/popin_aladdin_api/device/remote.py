@@ -445,12 +445,12 @@ class RemoteClient:
                             reply = json.loads(data)
                         except ValueError:
                             continue
-                        if not isinstance(reply, dict):
-                            continue
-                        # JSON の object の key は常に str。
-                        reply = cast("dict[str, Any]", reply)
-                        if reply.get("action") == reply_action:
-                            return reply
+                        match reply:
+                            case {"action": action} if action == reply_action:
+                                # JSON の object の key は常に str。
+                                return cast("dict[str, Any]", reply)
+                            case _:
+                                continue
             except TimeoutError as err:
                 raise AladdinConnectionError(
                     f"no reply (action {reply_action}) from popIn Aladdin "
@@ -595,13 +595,12 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
         reply = json.loads(data[start : start + length])
     except ValueError:
         return None
-    # JSON の object の key は常に str。
-    device = (
-        cast("dict[str, Any]", reply).get("data") if isinstance(reply, dict) else None
-    )
-    if not isinstance(device, dict):
-        return None
-    device = cast("dict[str, Any]", device)
+    match reply:
+        case {"data": dict()}:
+            # JSON の object の key は常に str。
+            device = cast("dict[str, Any]", reply["data"])
+        case _:
+            return None
     try:
         return DiscoveredDevice(
             ip_address=device.get("ipAddress"),

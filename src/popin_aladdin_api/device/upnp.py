@@ -44,8 +44,7 @@ def parse_response(xml: str, *, action: str) -> dict[str, str]:
     body = _parse_xml(xml, subject=action).find("{*}Body")
     if body is None:
         raise AladdinError(f"{action}: SOAP response has no Body element")
-    fault = body.find("{*}Fault")
-    if fault is not None:
+    if (fault := body.find("{*}Fault")) is not None:
         raise _soap_fault(fault, action=action)
     return {
         argument.tag.rpartition("}")[2]: argument.text or ""
