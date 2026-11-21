@@ -410,8 +410,7 @@ class RemoteClient:
                         data, _ = await protocol.received.get()
                 except TimeoutError:
                     break
-                device = _parse_discovery_reply(data)
-                if device is not None:
+                if (device := _parse_discovery_reply(data)) is not None:
                     found.setdefault(device.ip_address, device)
         return list(found.values())
 
