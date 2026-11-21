@@ -26,4 +26,5 @@ UPnP/DLNA MediaRenderer (SOAP) と独自制御プロトコル (TCP / UDP) をラ
 - デバイスに触るリクエストはプロセス内の 1 つの `asyncio.Lock` で直列化する (複数 SOAP 呼び出しから成る操作や D-pad の押下 → 離上列を崩さない)。uvicorn は単一プロセスで運用する。
 - 認証は無く、LAN 内からの利用を前提にする。
 - `device/` は FastAPI 非依存のまま保つ。device 層の例外から HTTP status への変換は `main.py` の exception handler で行う。
-- 設定は `settings.py` (pydantic-settings) で環境変数 / `.env` から読む。全て省略可で `.env` は任意。
+- 設定は `settings.py` (pydantic-settings) で環境変数から読み、`.env` は読まない。必須は `POPIN_ALADDIN_HOST` (接続先のデバイス) だけで、`mise run` のタスクには `mise.toml` の `[env]` が渡す。
+  mise の `[env]` はシェルの同名の変数より優先されるので、接続先を変えるときは git 管理外の `mise.local.toml` の `[env]` に書く。
