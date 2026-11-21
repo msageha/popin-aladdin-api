@@ -9,13 +9,14 @@ UPnP/DLNA MediaRenderer (SOAP) と独自制御プロトコル (TCP / UDP) をラ
 - `mise install`: ツールのインストールと git hooks (pre-commit / commit-msg) のセットアップ。`.venv` は最初の `uv run --locked` (`mise run test` 等) が `uv.lock` どおりに作る。
 - `mise run lint`: ruff format --check + ruff check + ty check。
 - `mise run test`: coverage 付き pytest。テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで検証する。
-- `mise exec -- prek run --all-files`: 全 hook (dprint、actionlint、hadolint、ruff、ty、gitleaks 等) を実行する。CI の `prek` job と同じ検証。
+- `mise exec -- prek run --all-files`: 全 hook (dprint、actionlint、zizmor、hadolint、typos、ruff、ty、gitleaks 等) を実行する。CI の `prek` job と同じ検証だが、zizmor の online audit は token があるときだけ走る (README「開発」参照)。
 - `mise run docs`: `mise.toml` の tasks を変更したあと README のタスク一覧を同期する。
 
 ## 規約
 
 - commit message は Conventional Commits (`type(scope): subject`)。commit-msg hook の commitlint が検査する。
-- python は ruff (format / lint) と ty に、json / yaml / markdown / toml は dprint に整形を任せる。手で整えず `prek run --all-files` に任せる。
+- python は ruff (format / lint) と ty に、json / yaml / markdown / toml / Dockerfile は dprint に整形を任せる。手で整えず `prek run --all-files` に任せる。
+- lint の除外は設定ファイルに書く。hadolint は `.hadolint.yaml` の `ignored` (Dockerfile 内の `# hadolint ignore=` は無効)、typos の誤検知は `typos.toml` の `extend-identifiers` / `extend-words`。Dockerfile の `LABEL` を足すときは `.hadolint.yaml` の `label-schema` にも足す (schema に無い label は拒否される)。
 - `.gitignore` はホワイトリスト方式。新しいファイルを追跡するときは対応する `!` の行を追記する。
 - ツールは `mise.toml` に exact version で pin し、変更したら `mise lock` で `mise.lock` を追従させる。Python パッケージは `pyproject.toml` と `uv.lock` で固定し、`uv run --locked` で実行する。Python 本体は `.python-version` (3.14) を uv が取得する。
 - workflow の `uses:` は commit SHA で固定し、バージョンをコメントで併記する。

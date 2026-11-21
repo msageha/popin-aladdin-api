@@ -22,12 +22,14 @@
 !/.pre-commit-config.yaml
 !/commitlint.config.mjs
 !/dprint.json
+!/typos.toml
 !/renovate.json
 
 !/pyproject.toml
 !/uv.lock
 !/.python-version
 !/Dockerfile
+!/.hadolint.yaml
 !/src/
 !/src/**
 !/tests/

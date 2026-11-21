@@ -12,6 +12,9 @@ RUN uv sync --locked --no-dev --no-editable
 
 FROM python:3.15-slim-bookworm AS runner
 
+LABEL org.opencontainers.image.source="https://github.com/msageha/popin-aladdin-api" \
+      org.opencontainers.image.licenses="MIT"
+
 RUN useradd --create-home --uid 10001 appuser
 
 WORKDIR /app

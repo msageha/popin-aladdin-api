@@ -1,0 +1,10 @@
+# Dockerfile 内の `# hadolint ignore=` で registry 制限などを外せないようにする。除外は ignored: でこのファイルに書く
+disable-ignore-pragma: true
+failure-threshold: style
+strict-labels: true
+label-schema:
+  org.opencontainers.image.source: url
+  org.opencontainers.image.licenses: spdx
+trustedRegistries:
+  - docker.io
+  - ghcr.io
