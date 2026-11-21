@@ -2,16 +2,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ..device.models import (
-    DeviceInfo,
-    MediaInfo,
-    PositionInfo,
-    ProtocolInfo,
-    RendererStatus,
-    TransportInfo,
-)
-from .deps import RendererDep, device_lock
-from .schemas import (
+from popin_aladdin_api.api.deps import RendererDep, device_lock
+from popin_aladdin_api.api.schemas import (
     CastRequest,
     Mute,
     PlayModeRequest,
@@ -19,6 +11,14 @@ from .schemas import (
     SeekRequest,
     SoapRequest,
     Volume,
+)
+from popin_aladdin_api.device.models import (
+    DeviceInfo,
+    MediaInfo,
+    PositionInfo,
+    ProtocolInfo,
+    RendererStatus,
+    TransportInfo,
 )
 
 router = APIRouter(dependencies=[device_lock])
@@ -80,7 +80,7 @@ async def get_volume(renderer: RendererDep) -> Volume:
 
 
 @router.post("/volume", tags=["control"])
-async def set_volume(body: Volume, renderer: RendererDep) -> Volume:
+async def set_volume(*, body: Volume, renderer: RendererDep) -> Volume:
     await renderer.set_volume(body.volume)
     return body
 
@@ -91,14 +91,14 @@ async def get_mute(renderer: RendererDep) -> Mute:
 
 
 @router.post("/mute", tags=["control"])
-async def set_mute(body: Mute, renderer: RendererDep) -> Mute:
-    await renderer.set_mute(body.mute)
+async def set_mute(*, body: Mute, renderer: RendererDep) -> Mute:
+    await renderer.set_mute(mute=body.mute)
     return body
 
 
 @router.post("/play", tags=["control"])
 async def play(
-    renderer: RendererDep, body: PlayRequest | None = None
+    *, renderer: RendererDep, body: PlayRequest | None = None
 ) -> dict[str, str]:
     body = body or PlayRequest()
     await renderer.play(body.speed)
@@ -130,19 +130,19 @@ async def previous_track(renderer: RendererDep) -> dict[str, str]:
 
 
 @router.post("/seek", tags=["control"])
-async def seek(body: SeekRequest, renderer: RendererDep) -> SeekRequest:
+async def seek(*, body: SeekRequest, renderer: RendererDep) -> SeekRequest:
     await renderer.seek(body.seconds)
     return body
 
 
 @router.post("/play-mode", tags=["control"])
-async def play_mode(body: PlayModeRequest, renderer: RendererDep) -> dict[str, str]:
+async def play_mode(*, body: PlayModeRequest, renderer: RendererDep) -> dict[str, str]:
     await renderer.set_play_mode(body.mode)
     return {"play_mode": body.mode}
 
 
 @router.post("/cast", tags=["control"])
-async def cast(body: CastRequest, renderer: RendererDep) -> dict[str, Any]:
+async def cast(*, body: CastRequest, renderer: RendererDep) -> dict[str, Any]:
     await renderer.cast(
         body.uri,
         title=body.title,
@@ -154,12 +154,12 @@ async def cast(body: CastRequest, renderer: RendererDep) -> dict[str, Any]:
 
 
 @router.post("/soap", tags=["raw"])
-async def soap(body: SoapRequest, renderer: RendererDep) -> dict[str, Any]:
+async def soap(*, body: SoapRequest, renderer: RendererDep) -> dict[str, Any]:
     """任意の SOAP アクションを送るパススルー。状態を変えうるアクションは confirm が必要。"""
     if body.action not in READONLY_SOAP_ACTIONS and not body.confirm:
         raise HTTPException(
             status_code=400,
             detail=f"set confirm=true to send the control action {body.action!r}",
         )
-    result = await renderer.invoke(body.service, body.action, body.args)
+    result = await renderer.invoke(body.service, action=body.action, args=body.args)
     return {"service": body.service, "action": body.action, "result": result}

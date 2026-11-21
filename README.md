@@ -195,20 +195,27 @@ curl -X POST http://127.0.0.1:8000/api/soap \
 
 ## 開発
 
-ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / typos / zizmor / gitleaks / fnox) は `mise.toml` の `[tools]` で
-exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。CI (`ci.yaml`) も
-ローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。`[tools]` を手で変更したら
-`mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の
-`mise install --locked` が失敗します)。Python 本体は mise ではなく uv が `.python-version` (3.14) に従って取得します。
+ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / typos / zizmor / gitleaks / fnox / pyright と node) は
+`mise.toml` の `[tools]` で exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。
+CI (`ci.yaml`) もローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。`[tools]` を
+手で変更したら `mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の
+`mise install --locked` が失敗します)。npm: backend のツール (pyright) は、`mise.lock` が依存の lock を `.mise/locks/`
+の下のファイル (sidecar) で digest 付きで参照するので、`.mise/locks/` の差分も同じ commit に含め、手で編集しません
+(参照先は `mise lock --sidecars` で確認できます)。Python 本体は mise ではなく uv が `.python-version` (3.14) に従って取得します。
 [fnox](https://fnox.jdx.dev/) は暗号化ファイル・パスワードマネージャ等から secret を読み込んで環境変数として
 コマンドに渡す secret manager で、`fnox.toml` はその daemon (解決済み secret のメモリキャッシュ。12h 無操作で終了) の
 設定です。この API 自体に secret は無く、template との共通設定として置いています。
 
+Python の依存は、`pyproject.toml` の `[[tool.uv.index]]` で宣言した `https://pypi.flatt.tech/simple/` から取得します。
+この宣言は `UV_INDEX_URL` やユーザー設定の `index-url` より優先されます。ただし `UV_DEFAULT_INDEX` はこの宣言より優先され、
+`UV_INDEX` やユーザー設定の (`explicit` でない) 追加の index はこの index より先に参照されるので、どれかを設定して
+`uv lock` を実行すると `uv.lock` の取得元が変わりえます。
+
 ```bash
-mise run format                     # ruff format
-mise run lint                       # ruff format --check + ruff check + ty check
-mise run test                       # coverage run -m pytest + report
-mise exec -- prek run --all-files   # pre-commit hooks を全ファイルに対して実行する (CI の prek job の online audit 以外と同じ)
+mise run format       # import の並べ替え + ruff format
+mise run lint         # ruff check + ruff format --check + lint-imports + ty check + pyright
+mise run test         # coverage run -m pytest + report
+mise run pre-commit   # pre-commit stage の hook を全追跡ファイルに対して実行する (CI の prek job の online audit 以外と同じ)
 ```
 
 テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで
@@ -216,18 +223,43 @@ mise exec -- prek run --all-files   # pre-commit hooks を全ファイルに対�
 
 ### pre-commit hooks
 
-`mise install` の `postinstall` hook で `prek install` が実行され、`.git/hooks/pre-commit` と
+`mise install` の `postinstall` hook で `prek install` が実行され、`.git/hooks/pre-commit`・`.git/hooks/pre-push`・
 `.git/hooks/commit-msg` が登録されます。`.pre-commit-config.yaml` の hook 構成が変わったあとの既存 clone では
 `mise exec -- prek install` を再実行してください。以前 pre-commit (Python package。旧 `make precommit-install`) で
 hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/pre-commit.legacy` として残して呼び続け、
 `pre-commit` が `.venv` から消えた後は commit が失敗します。`mise exec -- prek install --force` で置き換えてください
 (prek 以外の hook を自分で置いている場合は `.git/hooks/*.legacy` の中身を確認してから)。
 
-- [ruff](https://docs.astral.sh/ruff/) (format + lint) と [ty](https://docs.astral.sh/ty/) (型チェック) は
-  `uv run --locked` で `uv.lock` のバージョンを使い、pre-commit 側と二重管理しません。`uv.lock` が
-  `pyproject.toml` に追従していないと hook (と CI) がここで失敗します。
+- Python の hook は、commit・push する変更に Python のファイル (`.py`・`.pyi`)・`pyproject.toml`・`uv.lock`・
+  `.python-version`・`mise.toml`・`mise.lock` が含まれるときに走ります (整形の hook は Python のファイルだけを対象にします)。
+  - git commit 時: `ruff-isort` / `ruff-format` hook が commit するファイルの import を並べ替えて整形し、`lint` hook が
+    `mise run lint` を実行します。
+  - git push 時: `lint` hook と、`mise run test` を実行する `test` hook が走ります。
+  - ファイルを書き換える hook (整形・README のタスク一覧の同期・空白の修正) は git commit 時だけに走り、git push 時は
+    検査だけを行います。push 時の hook は push する commit ではなく作業ツリーに対して走るので、次の作業のファイルを
+    書き換えないためです。
+  - `lint` と `test` は作業ツリー全体を検査する手元の事前検査で、push した変更の最終的な判定は PR の CI が行います。
+    `mise run lint` は 1 つの検査が失敗しても止まらず、全部の結果を出してから失敗します。
+  - `mise run pre-commit` は pre-commit stage の hook を全追跡ファイルに対して手で実行する task で、整形の hook は
+    ファイルを書き換えます。書き換えずに検査だけをするなら `mise run lint` を使います。
+- main を checkout しているときの `git commit` は `no-commit-to-branch` hook が止めます (main への変更は PR 必須で、
+  GitHub の ruleset が強制します)。この hook は git commit 時だけに走り、検証用の `mise run pre-commit` では実行しません
+  (main を checkout したままでも検証できるようにするため)。
+- [ruff](https://docs.astral.sh/ruff/) (format + lint)、[ty](https://docs.astral.sh/ty/) と
+  [pyright](https://microsoft.github.io/pyright/) (型チェック) は strict に設定しています。例えば、2 引数目以降は
+  keyword-only にし、相対 import と `from __future__ import annotations` を禁じ、pyright は `strict` で型の分からない値
+  (Unknown) を拒否します。抑制は規則名付きの `# noqa: <code>`・`# ty: ignore[<rule>]`・`# pyright: ignore[<rule>]`
+  で書きます。`# type: ignore` は ty・pyright とも無効にしており、ty は規則名の無い `# ty: ignore` もエラーにします。ruff / ty / import-linter は `uv run --locked` で
+  `uv.lock` のバージョンを使うので、`uv.lock` が `pyproject.toml` に追従していないと hook (と CI) がここで失敗します。
+  pyright は npm で配布されるので、`mise.toml` に node と合わせて pin しています。
+- [import-linter](https://import-linter.readthedocs.io/): `pyproject.toml` の `[tool.importlinter]` の契約で、
+  `popin_aladdin_api` の中の層の向き (`main` → `api` → `settings` → `device`)、`api`・`device` の中の層の向き、
+  fastapi・httpx・pydantic_settings を直接 import できるモジュールを検査します (`mise run lint` の中で実行)。
+  上の層は途中の層を飛ばして下の層を import でき、契約の `layers` で `|` で並べた同じ層のモジュールどうしは
+  import できません。
+  `popin_aladdin_api`・`api`・`device` の直下にモジュールを足したら、`exhaustive = true` の契約の `layers` にも足します。
 - [dprint](https://dprint.dev/): json / markdown / toml / yaml / Dockerfile のフォーマッタ。plugin の WASM URL は
-  `dprint.json` に `url@sha256` の checksum 付きで pin します。
+  `dprint.json` に `url@sha256` の checksum 付きで pin します。`uv.lock` / `mise.lock` / `.mise/locks/` は対象外です。
 - [actionlint](https://github.com/rhysd/actionlint): workflow の静的検査。`run:` スクリプトの検査に
   [shellcheck](https://github.com/koalaman/shellcheck) を使います。
 - [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。`.hadolint.yaml` で style を含む全 severity を
@@ -245,7 +277,7 @@ hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/p
   CI の `gitleaks` job がコミット履歴全体を対象にします。
 - [commitlint](https://commitlint.js.org/): commit message を
   [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`) で検査する commit-msg hook。
-  ルールは `commitlint.config.mjs`。prek が node を自前で用意するため、リポジトリに node は不要です。
+  ルールは `commitlint.config.mjs`。prek が node と依存を隔離環境へ自前で用意します。
 
 `.gitignore` はホワイトリスト方式 (`*` で全て無視し、`!` で許可したものだけを追跡する) です。
 新しく追跡したいファイルを追加する場合は、対応する `!` の行を追記してください。
@@ -255,10 +287,11 @@ hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/p
 `.github/workflows/ci.yaml` は pull request 時に以下の job を並列実行します。job の `name` がそのまま
 required status check の名前になります。
 
-- `prek`: `mise.lock` 通りのツールで `.pre-commit-config.yaml` の全 hook を `prek run --all-files` で実行する。
-  続けて、online audit を含めた zizmor を token 付きで実行する。
+- `prek`: `mise.lock` 通りのツールで、`.pre-commit-config.yaml` の pre-commit stage の hook を `mise run pre-commit` で
+  全追跡ファイルに対して実行する。`lint` hook は `uv run --locked` で動くため、`uv.lock` と `pyproject.toml` の不整合も
+  ここで失敗する。続けて、online audit を含めた zizmor を token 付きで実行する。
 - `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
-- `verify`: `mise exec -- uv run --locked pytest` でテストを実行する。
+- `verify`: `mise run test` でテストを実行する。
 
 main への push では実行しません (main は PR 必須で、変更は PR の CI で検証してから merge します)。
 workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョンをコメントで併記します。
@@ -269,7 +302,9 @@ workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョン
 リポジトリに対して有効化しておく必要があります。
 
 - `pyproject.toml` の依存と `uv.lock` (範囲内の更新は `lockFileMaintenance` の週次再解決で追従する)。
-- `mise.toml` のバージョン bump と、それに伴う `mise.lock` の更新 (同じ PR で行われる)。
+- `mise.toml` のバージョン bump と、それに伴う `mise.lock` と `.mise/locks/` (pyright の依存の lock) の更新 (同じ PR で行われる)。
+  `.mise/locks/` の `package.json` は mise lock の生成物なので、npm manager の対象から外しています
+  (npm manager が別に更新すると、`mise.toml` の pin や `aube-lock.yaml` とずれるため)。
 - `.pre-commit-config.yaml` の hook `rev` と、`language: node` の hook の `additional_dependencies`。
 - workflow の `uses:` の commit SHA と、`dprint.json` の plugin URL / checksum。
 - `Dockerfile` のベースイメージ (runner の `python:*` のみ。builder の `uv:python3.14-*` は tag を解釈できず対象外なので、
@@ -548,13 +583,19 @@ Sync the task list embedded in README.md with mise.toml
 
 - **Usage:** `format`
 
-Format python sources with ruff
+Format python sources with ruff and sort imports
 
 ## `lint`
 
 - **Usage:** `lint`
 
-Check formatting (ruff format --check), lint (ruff check) and types (ty check)
+Check lint and formatting (ruff), layer dependencies (import-linter) and types (ty / pyright)
+
+## `pre-commit`
+
+- **Usage:** `pre-commit`
+
+Run the pre-commit stage hooks on all tracked files with prek (same as the CI prek job)
 
 ## `run-image`
 

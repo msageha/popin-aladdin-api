@@ -3,12 +3,13 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from ..device.remote import RemoteClient
-from ..device.renderer import RendererClient
+from popin_aladdin_api.device.remote import RemoteClient
+from popin_aladdin_api.device.renderer import RendererClient
 
 
 async def serialize_device_access(request: Request) -> AsyncGenerator[None]:
-    """デバイスに触るリクエストを 1 つずつ処理する。
+    """
+    デバイスに触るリクエストを 1 つずつ処理する。
 
     複数 SOAP 呼び出しから成る操作 (cast, status) の途中に別リクエストが割り込むのを防ぎ、
     D-pad の押下 → 離上列を崩さないための、プロセス内で唯一の直列化点。

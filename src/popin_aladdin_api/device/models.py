@@ -30,7 +30,8 @@ class LightButton(StrEnum):
 
 
 class ProjectorKey(StrEnum):
-    """プロジェクターのリモコンキー。
+    """
+    プロジェクターのリモコンキー。
 
     方向キーは押下 → 離上、フォーカス調整は押下と離上を連続送信、それ以外は単発。
     ``home_long`` / ``menu_long`` は公式アプリの長押しに相当する。

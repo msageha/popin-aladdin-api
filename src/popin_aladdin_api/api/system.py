@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from ..settings import settings
+from popin_aladdin_api.settings import settings
 
 router = APIRouter(tags=["system"])
 

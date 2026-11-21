@@ -2,8 +2,12 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from ..device.models import LightButton, PlayMode, ProjectorKey
-from ..device.renderer import DEFAULT_CAST_TITLE, DEFAULT_UPNP_CLASS
+from popin_aladdin_api.device.models import LightButton, PlayMode, ProjectorKey
+from popin_aladdin_api.device.renderer import (
+    DEFAULT_CAST_TITLE,
+    DEFAULT_UPNP_CLASS,
+    MAX_VOLUME,
+)
 
 # SOAP の action / 引数名はそのまま XML 要素名になるので、XML の名前として妥当な文字列に限る。
 XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
@@ -11,7 +15,10 @@ XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$"
 
 class Volume(BaseModel):
     volume: int = Field(
-        ge=0, le=100, description="マスター音量 (0..100)", examples=[35]
+        ge=0,
+        le=MAX_VOLUME,
+        description=f"マスター音量 (0..{MAX_VOLUME})",
+        examples=[35],
     )
 
 

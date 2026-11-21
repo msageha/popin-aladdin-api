@@ -17,9 +17,12 @@ dependencies = [
 [dependency-groups]
 dev = [
   "coverage>=7.15.0",
-  "pytest>=8",
-  "ruff>=0.12",
-  "ty>=0.0.57",
+  "import-linter>=2.13",
+  # 下限は [tool.pytest.ini_options] の strict を持つ版。
+  "pytest>=9.0",
+  # 下限は [tool.ruff] / [tool.ty] の設定が使う規則と設定キーを持つ版。
+  "ruff>=0.17",
+  "ty>=0.0.99",
 ]
 
 [build-system]
@@ -28,17 +31,175 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.format]
+line-ending = "lf"
 
 [tool.ruff.lint]
-select = ["ASYNC", "B", "C4", "C90", "E", "F", "I", "N", "RUF", "SIM", "UP", "W"]
-ignore = ["E501"]
+# 例外メッセージは raise する箇所で URL やデバイスの応答を埋め込んで組み立て、HTTP の detail にそのまま出す。
+# そのため、メッセージを例外クラスへ移させる TRY003 と、raise の前に中間変数を挟ませる EM は採らない。
+select = [
+  "A",
+  "ANN",
+  "ARG",
+  "ASYNC",
+  "B",
+  "BLE",
+  "C4",
+  "C90",
+  # 複数行の docstring は、開く """ と閉じる """ をそれぞれ独立した行に置く。D のほかの規則 (docstring の有無など) は採らない。
+  "D209",
+  "D213",
+  "DTZ",
+  "E",
+  "EXE",
+  "F",
+  "FAST",
+  "FBT",
+  "FIX",
+  "FLY",
+  "FURB",
+  "G",
+  "I",
+  "ICN",
+  "INP",
+  "INT",
+  "ISC",
+  "LOG",
+  "N",
+  "PERF",
+  "PGH",
+  "PIE",
+  "PL",
+  "PT",
+  "PTH",
+  "Q",
+  "RET",
+  "RSE",
+  "RUF",
+  "S",
+  "SIM",
+  "SLF",
+  "SLOT",
+  "T10",
+  "T20",
+  "TD",
+  "TID",
+  "TRY",
+  "UP",
+  "W",
+  "YTT",
+]
+ignore = [
+  # 折り返せない日本語の説明文があるので、行長は formatter の整形だけに任せる。
+  "E501",
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# テストは assert と期待値の直書きで書き、自分で組み立てた XML を解析する。
+"tests/**" = ["S101", "PLR2004", "S314"]
+
+[tool.ruff.lint.pylint]
+# 2 引数以上の関数を keyword-only で書かせる。
+# `def f(a, *, b)` の形は検出しない。外部の呼び出し規約に合わせる関数は noqa で除く。
+max-positional-args = 1
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
 
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "annotations are evaluated lazily on Python 3.14 (PEP 649); do not import annotations from __future__"
+
+[tool.importlinter]
+root_packages = ["popin_aladdin_api"]
+# 外部パッケージ (fastapi・httpx・pydantic_settings) の直接の import も、protected 契約で検査する。
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "main は api・settings・device を組み立て、device は FastAPI 層と設定に依存しない"
+type = "layers"
+containers = ["popin_aladdin_api"]
+layers = [
+  "main",
+  "api",
+  "settings",
+  "device",
+]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "api の層は router のモジュールから deps・schemas へ一方向に依存する"
+type = "layers"
+containers = ["popin_aladdin_api.api"]
+layers = [
+  "remote | renderer | system",
+  "deps | schemas",
+]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "device の層は remote・renderer から upnp、errors・models へ一方向に依存する"
+type = "layers"
+containers = ["popin_aladdin_api.device"]
+layers = [
+  "remote | renderer",
+  "upnp",
+  "errors | models",
+]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "HTTP の framework を直接 import するのは main と api だけ"
+type = "protected"
+protected_modules = ["fastapi"]
+allowed_importers = ["popin_aladdin_api.main", "popin_aladdin_api.api"]
+
+[[tool.importlinter.contracts]]
+name = "HTTP client を直接 import するのは device.renderer だけ"
+type = "protected"
+protected_modules = ["httpx"]
+allowed_importers = ["popin_aladdin_api.device.renderer"]
+
+[[tool.importlinter.contracts]]
+name = "環境変数の読み込みは settings だけ"
+type = "protected"
+protected_modules = ["pydantic_settings"]
+allowed_importers = ["popin_aladdin_api.settings"]
+
+[tool.ty.environment]
+python-platform = "linux"
+
+[tool.ty.analysis]
+# 抑制は `ty: ignore` に一本化する。
+respect-type-ignore-comments = false
+strict-equality-semantics = true
+
+[tool.ty.rules]
+missing-override-decorator = "error"
+blanket-ignore-comment = "error"
+
+[tool.pyright]
+include = ["src", "tests"]
+venvPath = "."
+venv = ".venv"
+pythonPlatform = "Linux"
+typeCheckingMode = "strict"
+# pyright は `type: ignore` を、括弧で規則を指定しても、行のすべての診断の抑制として扱う。
+# 抑制は、指定した規則だけを抑制する `pyright: ignore[<規則>]` で書く。
+enableTypeIgnoreComments = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-config", "--strict-markers"]
+python_functions = ["test_*"]
+strict = true
+# 依存の非推奨警告を見落とさない。
+filterwarnings = ["error"]
+addopts = ["-ra", "--tb=short"]
 
 [tool.coverage.run]
 source = ["src"]
@@ -50,3 +211,11 @@ show_missing = true
 [tool.uv]
 # Renovate の minimumReleaseAge と揃え、公開から 7 日未満の版を解決に使わない
 exclude-newer = "7 days"
+
+# UV_INDEX_URL やユーザー設定の index-url で uv.lock の registry が変わらないよう、それらより優先される既定の index を宣言する。
+# UV_DEFAULT_INDEX はこの宣言より優先され、UV_INDEX やユーザー設定の (explicit でない) 追加の index は既定の index より先に参照されるので、
+# どれかを設定して uv lock を実行すると uv.lock の取得元が変わりうる。
+[[tool.uv.index]]
+name = "flatt"
+url = "https://pypi.flatt.tech/simple/"
+default = true

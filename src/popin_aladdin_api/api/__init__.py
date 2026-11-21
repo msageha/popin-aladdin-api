@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from . import remote, renderer, system
+from popin_aladdin_api.api import remote, renderer, system
 
 router = APIRouter(prefix="/api")
 router.include_router(system.router)

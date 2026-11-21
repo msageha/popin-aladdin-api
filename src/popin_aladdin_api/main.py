@@ -8,11 +8,11 @@ from importlib.metadata import version
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from .api import router
-from .device.errors import AladdinConnectionError, AladdinError
-from .device.remote import RemoteClient
-from .device.renderer import RendererClient
-from .settings import settings
+from popin_aladdin_api.api import router
+from popin_aladdin_api.device.errors import AladdinConnectionError, AladdinError
+from popin_aladdin_api.device.remote import RemoteClient
+from popin_aladdin_api.device.renderer import RendererClient
+from popin_aladdin_api.settings import settings
 
 
 @asynccontextmanager

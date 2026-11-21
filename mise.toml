@@ -14,32 +14,50 @@ zizmor = "1.32.0"
 # actionlint は PATH に shellcheck があるときだけ run: スクリプトを検査するため、
 # ローカルと CI で検査内容が変わらないように pin する
 shellcheck = "0.11.0"
+"npm:pyright" = "1.1.414"
+# npm: backend が pyright を npm で入れるので、node も pin する
+node = "26.13.1"
 
 [env]
 POPIN_ALADDIN_HOST = "http://172.16.1.113"
 
 [tasks.dev]
 description = "Run the API server with auto-reload on http://127.0.0.1:8000"
-run = "uv run uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000"
+run = "uv run --locked uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000"
 
 [tasks.test]
 description = "Run pytest under coverage and print the report"
 run = [
-  "uv run coverage run -m pytest",
-  "uv run coverage report",
+  "uv run --locked coverage run -m pytest",
+  "uv run --locked coverage report",
 ]
 
 [tasks.lint]
-description = "Check formatting (ruff format --check), lint (ruff check) and types (ty check)"
-run = [
-  "uv run ruff format --check .",
-  "uv run ruff check .",
-  "uv run ty check",
-]
+description = "Check lint and formatting (ruff), layer dependencies (import-linter) and types (ty / pyright)"
+# 1 つ目の失敗で止めず、全部の検査の結果を出してから失敗を返す。
+run = """
+#!/usr/bin/env bash
+status=0
+uv run --locked ruff check . || status=1
+uv run --locked ruff format --check . || status=1
+uv run --locked lint-imports || status=1
+uv run --locked ty check || status=1
+pyright || status=1
+exit "$status"
+"""
 
 [tasks.format]
-description = "Format python sources with ruff"
-run = "uv run ruff format ."
+description = "Format python sources with ruff and sort imports"
+# ruff format は import を並べ替えないので、import の並びの規則 (I) の修正を先に適用する。
+run = [
+  "uv run --locked ruff check --select I --fix .",
+  "uv run --locked ruff format .",
+]
+
+[tasks.pre-commit]
+description = "Run the pre-commit stage hooks on all tracked files with prek (same as the CI prek job)"
+# no-commit-to-branch は commit 先のブランチを見る hook で、検証には関係しない。main を checkout したままでも検証できるよう外す。
+run = "SKIP=no-commit-to-branch prek run --all-files"
 
 [tasks.build-image]
 description = "Build the Docker image popin-aladdin-api:latest"
@@ -54,7 +72,7 @@ run = "docker run --rm -p 8000:8000 -e POPIN_ALADDIN_HOST -e UPNP_PORT -e DESCRI
 description = "Remove caches and coverage artifacts"
 run = [
   "find . -path ./.venv -prune -o -name '__pycache__' -type d -prune -exec rm -r {} +",
-  "rm -rf .pytest_cache .ruff_cache .ty_cache htmlcov .coverage",
+  "rm -rf .pytest_cache .ruff_cache .ty_cache .import_linter_cache htmlcov .coverage",
 ]
 
 [tasks.docs]
