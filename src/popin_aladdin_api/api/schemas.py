@@ -1,6 +1,7 @@
+import json
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from popin_aladdin_api.device.models import LightButton, PlayMode, ProjectorKey
 from popin_aladdin_api.device.renderer import (
@@ -13,7 +14,25 @@ from popin_aladdin_api.device.renderer import (
 type XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
 
 
-class Volume(BaseModel):
+class _Request(BaseModel):
+    """API への要求の本文。"""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_json_values(cls, data: object) -> object:
+        # JSON の構文は孤立した surrogate (U+D800 など) や NaN も通すが、前者は UTF-8 で表せず、
+        # 後者は JSON の値ではないので、デバイスへ送る前に拒否する。JSON の object でない本文は
+        # モデルの検証に任せる。
+        body: object = data
+        if isinstance(body, dict):
+            try:
+                json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
+            except ValueError as err:
+                raise ValueError("request must contain only JSON values") from err
+        return data
+
+
+class Volume(_Request):
     volume: int = Field(
         ge=0,
         le=MAX_VOLUME,
@@ -22,11 +41,11 @@ class Volume(BaseModel):
     )
 
 
-class Mute(BaseModel):
+class Mute(_Request):
     mute: bool = Field(description="True でミュート、False で解除", examples=[True])
 
 
-class SeekRequest(BaseModel):
+class SeekRequest(_Request):
     seconds: float = Field(
         ge=0,
         allow_inf_nan=False,
@@ -35,17 +54,17 @@ class SeekRequest(BaseModel):
     )
 
 
-class PlayModeRequest(BaseModel):
+class PlayModeRequest(_Request):
     mode: PlayMode = Field(description="AVTransport の再生モード", examples=["NORMAL"])
 
 
-class PlayRequest(BaseModel):
+class PlayRequest(_Request):
     speed: str = Field(
         default="1", description="再生速度 (UPnP の Speed)", examples=["1"]
     )
 
 
-class CastRequest(BaseModel):
+class CastRequest(_Request):
     uri: str = Field(
         pattern=r"^[A-Za-z][A-Za-z0-9+.-]*://",
         description="デバイスの LAN から到達できるメディアの絶対 URL",
@@ -70,7 +89,7 @@ class CastRequest(BaseModel):
     autoplay: bool = Field(default=True, description="読み込み直後に Play を送る")
 
 
-class LightRequest(BaseModel):
+class LightRequest(_Request):
     button: LightButton = Field(
         description="シーリングライトのボタン", examples=["on", "off", "brighter"]
     )
@@ -82,7 +101,7 @@ class LightRequest(BaseModel):
     )
 
 
-class KeyRequest(BaseModel):
+class KeyRequest(_Request):
     button: ProjectorKey = Field(
         description="方向キー (up / down / left / right / ok / home)、フォーカス調整 "
         "(focus_plus / focus_minus)、長押し (home_long / menu_long)、ハードキー "
@@ -93,11 +112,11 @@ class KeyRequest(BaseModel):
     repeat: int = Field(default=1, ge=1, le=50, description="押す回数")
 
 
-class TextRequest(BaseModel):
+class TextRequest(_Request):
     text: str = Field(description="送信する文字列", examples=["hello world"])
 
 
-class DeeplinkRequest(BaseModel):
+class DeeplinkRequest(_Request):
     url: str = Field(
         min_length=1,
         description="デバイスで開く deeplink (アプリの URL scheme / intent URL)",
@@ -105,14 +124,14 @@ class DeeplinkRequest(BaseModel):
     )
 
 
-class PowerOffRequest(BaseModel):
+class PowerOffRequest(_Request):
     confirm: bool = Field(
         default=False,
         description="電源を切るには true が必須。切った後はこの API から再点灯できない",
     )
 
 
-class SoapRequest(BaseModel):
+class SoapRequest(_Request):
     model_config = ConfigDict(extra="forbid")
 
     service: XmlName = Field(

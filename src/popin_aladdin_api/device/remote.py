@@ -446,6 +446,13 @@ class RemoteClient:
                             continue
                         match reply:
                             case {"action": action} if action == reply_action:
+                                try:
+                                    _require_utf8(reply)
+                                except ValueError as err:
+                                    raise AladdinError(
+                                        f"reply (action {reply_action}) is not valid "
+                                        f"UTF-8 JSON: {data[:200]!r}"
+                                    ) from err
                                 # JSON の object の key は常に str。
                                 return cast("dict[str, Any]", reply)
                             case _:
@@ -503,7 +510,7 @@ class RemoteClient:
         if reply is None or not body:
             return {}
         try:
-            payload = json.loads(body)
+            payload: Any = _loads_json(body)
         except ValueError as err:
             raise AladdinError(f"control reply is not JSON: {body[:200]!r}") from err
         if not isinstance(payload, dict):
@@ -591,7 +598,7 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
     else:
         return None
     try:
-        reply = json.loads(data[start : start + length])
+        reply: Any = _loads_json(data[start : start + length])
     except ValueError:
         return None
     match reply:
@@ -614,6 +621,30 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
     except ValidationError:
         # 1 台の応答が壊れていても他の応答は返す。
         return None
+
+
+def _loads_json(data: bytes) -> object:
+    """
+    デバイスの応答の JSON を解析する。
+
+    Raises:
+        ValueError: JSON でないか、`_require_utf8` を満たさないとき。
+    """
+    value: object = json.loads(data)
+    _require_utf8(value)
+    return value
+
+
+def _require_utf8(value: object) -> None:
+    """
+    JSON の値が UTF-8 で表せることを確かめる。
+
+    JSON の escape は孤立した surrogate (U+D800 など) も書けるが、それを含む値は API の応答に書けない。
+
+    Raises:
+        ValueError: 表せない文字を含むとき。
+    """
+    json.dumps(value, ensure_ascii=False).encode()
 
 
 def _model[T: BaseModel](model_type: type[T], /, **fields: object) -> T:

@@ -19,10 +19,15 @@ SOAP_ENCODING_NS = "http://schemas.xmlsoap.org/soap/encoding/"
 DIDL_LITE_NS = "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"
 
 
+def _escape(text: str) -> str:
+    # XML の parser は文字どおりの CR を LF に変えるので、値の CR は文字参照で送る。
+    return escape(text, {"\r": "&#13;"})
+
+
 def build_envelope(service_type: str, *, action: str, args: Mapping[str, Any]) -> str:
     """UPnP control の SOAP リクエストを組み立てる。引数値は XML エスケープする。"""
     arguments = "".join(
-        f"<{name}>{escape('' if value is None else str(value))}</{name}>"
+        f"<{name}>{_escape('' if value is None else str(value))}</{name}>"
         for name, value in args.items()
     )
     return (
@@ -146,8 +151,8 @@ def build_didl_metadata(uri: str, *, title: str, upnp_class: str) -> str:
         'xmlns:dc="http://purl.org/dc/elements/1.1/" '
         'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
         '<item id="0" parentID="-1" restricted="1">'
-        f"<dc:title>{escape(title)}</dc:title>"
-        f"<upnp:class>{escape(upnp_class)}</upnp:class>"
-        f'<res protocolInfo="http-get:*:*:*">{escape(uri)}</res>'
+        f"<dc:title>{_escape(title)}</dc:title>"
+        f"<upnp:class>{_escape(upnp_class)}</upnp:class>"
+        f'<res protocolInfo="http-get:*:*:*">{_escape(uri)}</res>'
         "</item></DIDL-Lite>"
     )

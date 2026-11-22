@@ -19,9 +19,11 @@ dependencies = [
 [dependency-groups]
 dev = [
   "coverage>=7.15.0",
+  "hypothesis>=6.170.15",
   "import-linter>=2.13",
   # 下限は [tool.pytest.ini_options] の strict を持つ版。
   "pytest>=9.0",
+  "pytest-xdist>=3.8.0",
   # 下限は [tool.ruff] / [tool.ty] の設定が使う規則と設定キーを持つ版。
   "ruff>=0.17",
   "ty>=0.0.99",
@@ -203,11 +205,19 @@ python_functions = ["test_*"]
 strict = true
 # 依存の非推奨警告を見落とさない。
 filterwarnings = ["error"]
-addopts = ["-ra", "--tb=short"]
+# テストは worker ごとに API サーバーと fake のデバイスを 1 組起動して並列に走る (tests/conftest.py)。
+# 1 秒程度かかるテスト (応答のタイムアウト・長押し・発見の待ち) が偏らないよう、空いた worker が残りを引き取る worksteal で配る。
+addopts = ["-ra", "--tb=short", "--numprocesses=auto", "--dist=worksteal"]
 
 [tool.coverage.run]
 source = ["src"]
 branch = true
+# テストは API サーバーを subprocess で起動し、pytest も xdist の worker で走るので、子プロセスも計測する。
+patch = ["subprocess"]
+# uvicorn は SIGTERM で終了するときに signal を投げ直し、atexit を通らずに終わるので、SIGTERM でも計測結果を保存する。
+sigterm = true
+# src を実行しない pytest の親プロセス (xdist の controller) が毎回出す警告。計測の結果は combine 後の report で見る。
+disable_warnings = ["no-data-collected"]
 
 [tool.coverage.report]
 show_missing = true

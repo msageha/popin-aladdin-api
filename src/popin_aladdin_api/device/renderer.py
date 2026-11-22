@@ -56,7 +56,13 @@ class RendererClient:
         timeout: float = 10.0,
     ) -> None:
         self.description_url = urljoin(f"http://{host}:{port}/", description_path)
-        self._http = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+        # デバイスは同じ LAN にいるので、実行環境の proxy の設定 (HTTP_PROXY や macOS のシステム設定) を
+        # 使わずに直接つなぐ。TCP / UDP の制御面も proxy を通らない。trust_env=False は CA の設定
+        # (SSL_CERT_FILE など) も読まなくなるので使わず、transport を渡して proxy の検出だけを止める
+        # (httpx 0.28 の挙動)。
+        self._http = httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, transport=httpx.AsyncHTTPTransport()
+        )
         self._description: DeviceDescription | None = None
 
     async def __aenter__(self) -> Self:
