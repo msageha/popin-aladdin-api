@@ -1,7 +1,7 @@
 # 版は exact で pin し (latest にしない)、Renovate が mise.lock と同じ PR で bump する。手で変えたら `mise lock` を実行する。
 # Python 本体は mise ではなく uv が .python-version に従って取得する。
 [tools]
-uv = "0.13.7"
+uv = "0.13.8"
 prek = "0.5.10"
 # actionlint の後継の fork。aqua の backend で入れ、取得物を checksum と GitHub の attestation で検証する (mise.lock の provenance)。
 "aqua:jdx/jactionlint" = "2.6.0"
