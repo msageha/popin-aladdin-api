@@ -46,7 +46,7 @@ repos:
         types_or: [json, yaml, markdown, toml, dockerfile]
         stages: [pre-commit]
       # correctness profile は actionlint と同じ範囲の検査 (セキュリティの監査は zizmor が行う)。
-      # --strict-exit で warn の所見も失敗にし、--shellcheck で shellcheck が無いときに run: の検査を黙って飛ばさない。
+      # --strict-exit で error 以外 (warn・info) の所見も失敗にし、--shellcheck で shellcheck が無いときに run: の検査を黙って飛ばさない。
       - id: jactionlint
         name: Lint GitHub Actions workflows with jactionlint
         language: system
@@ -116,7 +116,7 @@ repos:
       - id: commitlint
         name: Lint commit message with commitlint
         # language: node により prek が node と依存を隔離環境へ自前インストールする。
-        # prek は手元にある node を先に使うので、commitlint が動く版 (22.12.0 以上) に限る。
+        # 版を指定しないと、prek が管理する node が無い環境では手元の node を版を問わず使うので、commitlint が動く版 (22.12.0 以上) に限る。
         language: node
         language_version: ">=22.12.0"
         additional_dependencies:

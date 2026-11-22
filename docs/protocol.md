@@ -88,7 +88,7 @@ UDN と controlURL は MAC アドレスから決まり機体ごとに変わら�
 | `2`       | Album         | フォトメモリーの枚数と容量を照会する     | `{"actionCode": 0, "count": 0, ...}` | `{"count", "list": [{"name", "size", "type"}], "freeSpace", "totalSpace", "lightVersion"}` | `/remote/album`          |
 
 「(待たない)」は、この API が応答を待たないものです。
-Version の応答の `featureAccess`・`capability` は、機能名ごとに `1` (対応) か `null` (不明) を持つ object です。
+Version の応答の `featureAccess` は機能名ごとの利用可否 (`1` = 利用可)、`capability` は機能名ごとの対応 (`1` = 対応、`null` = 不明) を持つ object です。
 
 ライトの action code (JSON 種別 `7`):
 

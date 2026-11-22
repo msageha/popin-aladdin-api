@@ -181,6 +181,9 @@ strict-equality-semantics = true
 [tool.ty.rules]
 missing-override-decorator = "error"
 blanket-ignore-comment = "error"
+# 既定で無効だが、型引数の書き忘れ (list が list[Unknown] になり検査が効かなくなる) と、実行時の NameError を検出する。
+missing-type-argument = "error"
+possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

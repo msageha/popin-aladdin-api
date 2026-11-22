@@ -113,7 +113,7 @@ healthcheck:
 | 任意の SOAP 呼出 | `POST /soap`                                                                                                    |
 
 `/api/cast` の URL はデバイスから取得できる必要があります。`/api/capture` が返す `image_url` も、デバイスと同じ LAN から取得します。
-`/api/power/off` と、読み取り専用のアクション以外を呼ぶ `/api/soap` には、誤操作を防ぐため `"confirm": true` が要ります。
+`/api/power/off` と `/api/soap` には、誤操作を防ぐため `"confirm": true` が要ります。`/api/soap` で省けるのは、`GetVolume`・`GetTransportInfo` など、この API が読み取り専用として登録したアクションだけです。
 電源を切ると、この API からは再び電源を入れられません。
 
 ### 使用例

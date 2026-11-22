@@ -106,7 +106,8 @@ class CloseConnection:
 
 CLOSE_CONNECTION = CloseConnection()
 # TCP の要求への応答: 要求と同じ種別のフレームで返す JSON の値・payload の bytes そのもの、
-# 別の種別で返す `Frame`、応答を返さずに接続を閉じる `CLOSE_CONNECTION`、応答しない None のどれか。
+# 別の種別で返す `Frame`、応答を返さずに接続を閉じる `CLOSE_CONNECTION` のどれか。
+# 応答を登録していない種別の要求には応答しない。
 type TcpReply = JsonValue | bytes | Frame | CloseConnection
 
 _DEFAULT_SOAP_OUTPUTS: dict[str, dict[str, str]] = {

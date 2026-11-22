@@ -3,7 +3,7 @@
 [tools]
 uv = "0.13.7"
 prek = "0.5.10"
-# actionlint の後継の fork。短い名前 (jactionlint) は Renovate が版を追えないので、aqua の backend で書く。
+# actionlint の後継の fork。aqua の backend で入れ、取得物を checksum と GitHub の attestation で検証する (mise.lock の provenance)。
 "aqua:jdx/jactionlint" = "2.6.0"
 dprint = "0.64.3"
 gitleaks = "8.30.1"
