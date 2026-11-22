@@ -9,7 +9,7 @@ UPnP/DLNA MediaRenderer (SOAP) と独自制御プロトコル (TCP / UDP) をラ
 - `mise trust` (新しい clone で 1 回) と `mise install`: ツールのインストールと git hooks (pre-commit / pre-push / commit-msg) の登録。`.venv` は最初の `uv run --locked` (`mise run test` 等) が `uv.lock` どおりに作る。`.pre-commit-config.yaml` を変えたら `mise exec -- prek install` で hook を登録し直す。
 - `mise run lint`: ファイルを書き換えない検査 (ruff check / ruff format --check / lint-imports / ty check / pyright)。1 つが失敗しても全部を回してから失敗を返す。
 - `mise run format`: リポジトリ全体の import の並べ替えと ruff format (ファイルを書き換える)。
-- `mise run test`: coverage 付き pytest。テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで検証する。
+- `mise run test`: coverage 付き pytest (xdist で並列)。テストは機能ごとの e2e で、worker ごとに `uvicorn popin_aladdin_api.main:app` を subprocess で起動し、localhost の fake のデバイス (`tests/harness.py`) につなぐ。実機には触れない。入力の全域で成り立つ契約は Hypothesis の property で書き、src の内部を直接 import・patch しない。
 - `mise run pre-commit`: CI の `prek` job と同じ hook (dprint・actionlint・zizmor・hadolint・typos・ruff の整形・lint・gitleaks 等) を全追跡ファイルに実行する。整形の hook はファイルを書き換える。zizmor の online audit は token があるときだけ走る (README「開発」)。
 - `mise run check-image`: Docker イメージを `popin-aladdin-api:latest` として build し、ダミーの設定・read-only・capability なしで起動して `/api/health` の応答を確かめる (CI の `image` job が amd64 / arm64 で同じ task を実行する)。image の build の入力 (`Dockerfile`・`.dockerignore`・`.python-version`・`pyproject.toml`・`uv.lock`・`src/`) か、この task を変えたら実行する。Docker を使えない環境では、その変更を含む commit で走った PR の `image` job の結果で確かめ、無ければ未検証と報告する。ランナーは distroless で shell が無いので、中は `docker run --rm --entrypoint python popin-aladdin-api:latest -c '<code>'` で調べる。
 - `mise run docs`: `mise.toml` の tasks を変更したあと README のタスク一覧を同期する。

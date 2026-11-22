@@ -28,6 +28,7 @@ Python 本体 (`.python-version` の 3.14) と `.venv` は、最初の `uv run` 
 設定は環境変数で渡します。接続先のデバイス (`POPIN_ALADDIN_HOST`: URL またはホスト名 / IP。ポートは含めない) は
 必須で、`mise.toml` の `[env]` で設定します。mise の `[env]` はシェルの同名の変数より優先されるので、手元で変えるときは
 git 管理外の `mise.local.toml` の `[env]` に書いてください。ほかの設定値にはアプリ側に既定値があり、変えるときだけ環境変数で渡します。
+デバイスへは、実行環境の proxy の設定 (`HTTP_PROXY` などの環境変数や macOS のシステム設定) を使わずに直接接続します。
 
 | 変数                     | 既定値  | 説明                                                                                  |
 | ------------------------ | ------- | ------------------------------------------------------------------------------------- |
@@ -128,7 +129,7 @@ kmaehashi/popin-aladdin-light の実測で動作が確認されています。`/
 | Status | 意味                                                                                                                                                  |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400    | `/api/soap` で状態を変えうるアクションと `/api/power/off` に `confirm: true` が無い                                                                   |
-| 422    | リクエスト body の検証エラー (未知のボタン名・範囲外の音量など)                                                                                       |
+| 422    | リクエストの検証エラー (未知のボタン名・範囲外の音量・NaN や UTF-8 で表せない文字を含む値など)。応答の `detail` には送った値を含めない                |
 | 502    | デバイスが SOAP fault や想定外の応答を返した。SOAP fault なら body に `fault_code` (SOAP faultcode) と `upnp_error_code` (UPnPError errorCode) を含む |
 | 504    | デバイスにネットワーク的に到達できない (接続拒否・タイムアウト)、または UDP JSON コマンドの応答が `TIMEOUT` 秒以内に届かない                          |
 
@@ -224,12 +225,17 @@ Python の依存は、`pyproject.toml` の `[[tool.uv.index]]` で宣言した `
 ```bash
 mise run format       # import の並べ替え + ruff format
 mise run lint         # ruff check + ruff format --check + lint-imports + ty check + pyright
-mise run test         # coverage run -m pytest + report
+mise run test         # coverage 付きの pytest (xdist で並列) + report
 mise run pre-commit   # pre-commit stage の hook を全追跡ファイルに対して実行する (CI の prek job の online audit 以外と同じ)
 ```
 
-テストは実機に触れず、`httpx.MockTransport` と localhost の TCP / UDP サーバーで
-プロトコルを検証します。
+テストは利用者と同じく HTTP で API を呼ぶ e2e テストです。xdist の worker ごとに、API サーバーを本番と同じ
+`uvicorn popin_aladdin_api.main:app` で subprocess として起動し、実機の代わりに `tests/harness.py` の fake のデバイスへ
+つなぎます。fake は「プロトコルの詳細」の UPnP / TCP / UDP の各制御面を localhost の空きポートで受け付け、届いた操作を記録します。
+API サーバーには fake の接続先だけを環境変数で渡すので、`mise.toml` の `POPIN_ALADDIN_HOST` (実機) には接続しません。
+入力のどんな値でも成り立つべき契約 (文字列がそのままデバイスに届く、範囲外の値を拒否する等) は Hypothesis で入力を生成して確かめます。
+`/api/discover` のテストだけは、fake が待ち受ける空きポート宛てに 255.255.255.255 へのブロードキャストを送るので、その UDP の
+パケットは LAN にも出ます。coverage は API サーバーの subprocess も計測し、その計測が欠けると `mise run test` は失敗します。
 
 ### pre-commit hooks
 
@@ -443,7 +449,7 @@ src/popin_aladdin_api/
     system.py        /health
     schemas.py       リクエストモデル
     deps.py          依存性注入と直列化ロック
-tests/               src と同じ木構造のオフライン単体テスト
+tests/               機能ごとの e2e テストと、fake のデバイス・API サーバーの起動 (harness.py)
 ```
 
 ```mermaid
