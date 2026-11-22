@@ -1,20 +1,8 @@
 """
 popIn Aladdin の独自制御プロトコルを叩く async クライアント。
 
-公式アプリ Aladdin X (``cc.popin.aladdin.assistant`` 3.6.25) の静的解析に基づく。制御面は 3 つある。
-
-* TCP 30913 (popIn 独自): 6 バイトヘッダ ``struct '<IBB'`` (payload 長, フレーム種別, JSON 種別) + JSON。
-  種別 0 は heartbeat (同じ 0/0 の空フレームが返る)、1 は操作 (JSON 種別で内容が決まる)、
-  3 は Version ハンドシェイク (クライアント ID を送るとデバイスの機種・機能一覧が返る)。
-  ライト・文字入力・音声・deeplink・アプリ照会・アルバム照会に使う。
-* UDP 16735 (XGIMI GMSDK のキー入力): ASCII ``KEYSSTATUS:<key>+<1|0>`` (押下 / 離上)、``KEYPRESSES:<key>`` (単発)。
-* UDP 16750 (XGIMI GMSDK の JSON コマンド): ``{"action": 20000, "msgid": "2", "controlCmd": {...}}``。
-  応答はクライアント側 UDP 16751 に JSON で届く。スクリーンショット・メモリ解放・実行時情報・電源断に使う。
-* UDP 8100 (ブロードキャスト): デバイス発見。
-
-PIN やトークンによる認証は無い。公式アプリは接続時に Version ハンドシェイクを送るが、
-ライト・キー入力はそれ無しでも効く (kmaehashi/popin-aladdin-light の実測)。照会系は
-アプリと同じ順序 (Version → 照会) で送る。並行呼び出しは直列化しないので、呼び出し側で制御する。
+公式アプリ Aladdin X の静的解析で復元した TCP / UDP の制御面を使う。各制御面の形式と、実機で確かめた範囲は
+docs/protocol.md にある。並行呼び出しは直列化しないので、呼び出し側で制御する。
 """
 
 import asyncio
@@ -31,7 +19,6 @@ from pydantic import BaseModel, ValidationError
 
 from popin_aladdin_api.device.errors import AladdinConnectionError, AladdinError
 from popin_aladdin_api.device.models import (
-    AlbumFile,
     DiscoveredDevice,
     LightButton,
     ProjectorKey,
@@ -40,12 +27,6 @@ from popin_aladdin_api.device.models import (
     RemoteDeviceInfo,
     RemoteVersion,
 )
-
-REMOTE_TCP_PORT = 30913
-REMOTE_UDP_PORT = 16735
-REMOTE_CMD_UDP_PORT = 16750
-REMOTE_REPLY_UDP_PORT = 16751
-DISCOVERY_UDP_PORT = 8100
 
 # TCP のフレーム種別と、種別 1 の JSON 種別 (公式アプリの BaseProtocol.getJsonType())
 FRAME_HEARTBEAT = 0
@@ -112,6 +93,9 @@ HARDWARE_KEY_CODES: dict[ProjectorKey, int] = {
     ProjectorKey.CUSTOM_LONG: 305,
 }
 
+# 方向キーを押してから離すまでの秒数。
+DPAD_HOLD = 0.1
+
 # 公式アプリの HOME 長押し: 押下を 30 回送り、1 秒後に離上する。
 HOME_LONG_PRESS_REPEAT = 30
 HOME_LONG_PRESS_HOLD = 1.0
@@ -151,12 +135,12 @@ class RemoteClient:
         self,
         host: str,
         *,
-        tcp_port: int = REMOTE_TCP_PORT,
-        udp_port: int = REMOTE_UDP_PORT,
-        cmd_udp_port: int = REMOTE_CMD_UDP_PORT,
-        reply_udp_port: int = REMOTE_REPLY_UDP_PORT,
-        discovery_udp_port: int = DISCOVERY_UDP_PORT,
-        timeout: float = 10.0,
+        tcp_port: int,
+        udp_port: int,
+        cmd_udp_port: int,
+        reply_udp_port: int,
+        discovery_udp_port: int,
+        timeout: float,
     ) -> None:
         self.host = host
         self.tcp_port = tcp_port
@@ -219,24 +203,7 @@ class RemoteClient:
         payload = await self._send_tcp(
             [self._version_frame()], reply=(FRAME_VERSION, None)
         )
-        return _model(
-            RemoteVersion,
-            code=payload.get("code"),
-            model=payload.get("model"),
-            device_name=payload.get("device_name"),
-            pid=payload.get("pid"),
-            aladdin_id=payload.get("aladdinId"),
-            platform=payload.get("platform"),
-            os_version=payload.get("osVersion"),
-            sdk_int=payload.get("sdkInt"),
-            lang=payload.get("lang"),
-            country=payload.get("country"),
-            total_space=payload.get("totalSpace"),
-            free_space=payload.get("freeSpace"),
-            server_access=payload.get("serverAccess"),
-            feature_access=payload.get("featureAccess"),
-            capability=payload.get("capability"),
-        )
+        return _model(RemoteVersion, reply=payload)
 
     async def album(self) -> RemoteAlbum:
         """フォトメモリー (デバイス内アルバム) の枚数・容量・ライトのファームウェア版を得る。"""
@@ -264,22 +231,7 @@ class RemoteClient:
             for item in cast("list[object]", files)
             if isinstance(item, dict)
         ]
-        return _model(
-            RemoteAlbum,
-            count=payload.get("count"),
-            total_space=payload.get("totalSpace"),
-            free_space=payload.get("freeSpace"),
-            light_version=payload.get("lightVersion"),
-            files=[
-                _model(
-                    AlbumFile,
-                    name=item.get("name"),
-                    size=item.get("size"),
-                    type=item.get("type"),
-                )
-                for item in items
-            ],
-        )
+        return _model(RemoteAlbum, reply={**payload, "list": items})
 
     async def app_info(self, package: str) -> RemoteAppInfo:
         """``package`` がデバイスにインストールされているかと、その版を得る。"""
@@ -291,13 +243,7 @@ class RemoteClient:
             ],
             reply=(FRAME_COMMAND, JSON_APP_INFO),
         )
-        return _model(
-            RemoteAppInfo,
-            package=payload.get("pkgName"),
-            installed=payload.get("isInstalled"),
-            version_code=payload.get("versionCode"),
-            version_name=payload.get("versionName"),
-        )
+        return _model(RemoteAppInfo, reply=payload)
 
     def _version_frame(self) -> bytes:
         # 公式アプリの Version を Gson が直列化した形。code 10 はアプリが名乗るプロトコル版。
@@ -315,11 +261,11 @@ class RemoteClient:
             json_type=0,
         )
 
-    async def press_key(self, key: ProjectorKey, *, hold: float = 0.1) -> None:
+    async def press_key(self, key: ProjectorKey) -> None:
         """
         リモコンキーを 1 回押す。
 
-        方向キーは押下 → hold 秒 → 離上、フォーカス調整は押下と離上を連続、HOME 長押しは
+        方向キーは押下 → ``DPAD_HOLD`` 秒 → 離上、フォーカス調整は押下と離上を連続、HOME 長押しは
         公式アプリと同じ列、ハードキーは単発。
         """
         # 名前で指定された host は IPv6 が先に解決されうるが、キーは IPv4 の LAN 経路にしか届かない。
@@ -348,10 +294,10 @@ class RemoteClient:
             code = DPAD_KEY_CODES[key]
             udp.sendto(f"KEYSSTATUS:{code}+1".encode())
             try:
-                await asyncio.sleep(hold)
+                await asyncio.sleep(DPAD_HOLD)
             finally:
                 # デバイスが期待する離上列: 全方向キーを離上してから、押したキーをもう一度離上する。
-                # hold 中にキャンセルされても押しっぱなしにしないため finally で送る。
+                # 押している間にキャンセルされても押しっぱなしにしないため finally で送る。
                 for other in DPAD_KEY_CODES.values():
                     udp.sendto(f"KEYSSTATUS:{other}+0".encode())
                 udp.sendto(f"KEYSSTATUS:{code}+0".encode())
@@ -380,17 +326,7 @@ class RemoteClient:
         payload = await self._control_command(
             {"mode": 32}, reply_action=REPLY_DEVICE_INFO
         )
-        return _model(
-            RemoteDeviceInfo,
-            device_name=payload.get("deviceName"),
-            device_mode=payload.get("deviceMode"),
-            foreground_app=payload.get("deviceApp"),
-            foreground_package=payload.get("packageApp"),
-            runtime=payload.get("runtime"),
-            rom=payload.get("deviceRom"),
-            mst=payload.get("mst"),
-            tips=payload.get("tips"),
-        )
+        return _model(RemoteDeviceInfo, reply=payload)
 
     async def discover(self, wait: float) -> list[DiscoveredDevice]:
         """LAN にブロードキャストし、``wait`` 秒の間に応答した Aladdin を返す。設定した host には依存しない。"""
@@ -608,16 +544,7 @@ def _parse_discovery_reply(data: bytes) -> DiscoveredDevice | None:
         case _:
             return None
     try:
-        return DiscoveredDevice(
-            ip_address=device.get("ipAddress"),
-            model=device.get("model"),
-            name=device.get("name"),
-            pid=device.get("pid"),
-            mac=device.get("mac"),
-            version=device.get("version"),
-            zipcode=device.get("zipcode"),
-            connected=device.get("isConnected"),
-        )
+        return DiscoveredDevice.model_validate(device)
     except ValidationError:
         # 1 台の応答が壊れていても他の応答は返す。
         return None
@@ -647,9 +574,9 @@ def _require_utf8(value: object) -> None:
     json.dumps(value, ensure_ascii=False).encode()
 
 
-def _model[T: BaseModel](model_type: type[T], /, **fields: object) -> T:
-    """デバイスの応答値をモデルにする。型が合わなければ AladdinError (500 ではなく 502 にする)。"""
+def _model[T: BaseModel](model_type: type[T], *, reply: object) -> T:
+    """デバイスの応答をモデルにする。型が合わなければ AladdinError (500 ではなく 502 にする)。"""
     try:
-        return model_type.model_validate(fields)
+        return model_type.model_validate(reply)
     except ValidationError as err:
         raise AladdinError(f"unexpected value in device reply: {err}") from err

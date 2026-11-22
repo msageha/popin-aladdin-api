@@ -58,7 +58,7 @@ def test_soap_fault_without_numeric_error_code_has_null_upnp_error_code(
     assert response.json()["upnp_error_code"] is None
 
 
-@pytest.mark.parametrize(("method", "path", "action"), _ENDPOINTS)
+# 状態を読む操作と変える操作で同じ SOAP の解析を通るので、GET の経路だけで確かめる。
 @pytest.mark.parametrize(
     "reply",
     [
@@ -68,13 +68,22 @@ def test_soap_fault_without_numeric_error_code_has_null_upnp_error_code(
     ],
     ids=["http-error-html", "truncated-xml", "not-soap-envelope"],
 )
-def test_reply_that_is_not_soap_is_502(
-    *, stack: Stack, method: str, path: str, action: str, reply: HttpReply
+def test_reply_that_is_not_soap_is_502(*, stack: Stack, reply: HttpReply) -> None:
+    stack.device.reset()
+    stack.device.soap_replies["GetTransportInfo"] = reply
+
+    assert stack.api.get("/api/transport").status_code == 502
+
+
+def test_reply_that_is_not_soap_is_502_even_when_the_output_is_unused(
+    stack: Stack,
 ) -> None:
     stack.device.reset()
-    stack.device.soap_replies[action] = reply
+    stack.device.soap_replies["Pause"] = HttpReply(
+        200, b"<root/>", 'text/xml; charset="utf-8"'
+    )
 
-    assert _call(stack, method=method, path=path).status_code == 502
+    assert stack.api.post("/api/pause").status_code == 502
 
 
 @pytest.mark.parametrize(("method", "path"), [(m, p) for m, p, _ in _ENDPOINTS])

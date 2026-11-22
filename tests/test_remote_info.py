@@ -77,7 +77,7 @@ def test_ping_sends_heartbeat_and_succeeds_on_reply(stack: Stack) -> None:
     assert response.json() == {"ok": True}
     [frame] = stack.device.received_frames()
     assert (frame.kind, frame.json_type) == HEARTBEAT
-    # README: heartbeat の payload は無いか 1。
+    # docs/protocol.md: heartbeat の payload は無いか 1。
     assert frame.body == b"" or as_json(frame.payload) == "1"
 
 
@@ -109,7 +109,7 @@ def test_version_handshake_identifies_this_client(stack: Stack) -> None:
         client_ids.append(frame.payload["deviceId"])
     [client_id, again] = client_ids
     assert isinstance(client_id, str)
-    # README: deviceId はクライアントの UUID。
+    # docs/protocol.md: deviceId はクライアントの UUID。
     uuid.UUID(client_id)
     # 公式アプリと同じく、1 つのクライアントは同じ ID を名乗る。
     assert again == client_id
@@ -177,7 +177,7 @@ def test_album_reports_photos_and_light_version(stack: Stack) -> None:
         "light_version": DEFAULT_ALBUM_REPLY["lightVersion"],
         "files": DEFAULT_ALBUM_REPLY["list"],
     }
-    # README: 公式アプリと同じく、同じ接続で Version ハンドシェイクの後に照会する。
+    # docs/protocol.md: 公式アプリと同じく、同じ接続で Version ハンドシェイクの後に照会する。
     version, album = stack.device.received_frames()
     assert (version.kind, version.json_type) == VERSION
     assert (album.kind, album.json_type) == ALBUM
@@ -206,21 +206,26 @@ def test_unexpected_album_reply_is_502(*, stack: Stack, reply: dict[str, Any]) -
     ("installed", "expected"),
     [
         (
-            {"jp.co.tver.tvapp": (4_010_000, "4.1.0")},
+            {"isInstalled": True, "versionCode": 4_010_000, "versionName": "4.1.0"},
             {"installed": True, "version_code": 4_010_000, "version_name": "4.1.0"},
         ),
-        ({}, {"installed": False, "version_code": 0, "version_name": ""}),
+        (
+            {"isInstalled": False, "versionCode": 0, "versionName": ""},
+            {"installed": False, "version_code": 0, "version_name": ""},
+        ),
     ],
     ids=["installed", "not-installed"],
 )
 def test_app_reports_installation_and_version(
     *,
     stack: Stack,
-    installed: dict[str, tuple[int, str]],
+    installed: dict[str, JsonValue],
     expected: dict[str, Any],
 ) -> None:
     stack.device.reset()
-    stack.device.installed_apps = installed
+    stack.device.respond_tcp(
+        APP_INFO, reply={"pkgName": "jp.co.tver.tvapp"} | installed
+    )
 
     response = stack.api.get("/api/remote/apps/jp.co.tver.tvapp")
 

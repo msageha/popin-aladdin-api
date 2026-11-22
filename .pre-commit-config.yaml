@@ -3,15 +3,12 @@ default_install_hook_types: [pre-commit, pre-push, commit-msg]
 # rebase や cherry-pick で pre-commit を経ずに作った commit も、push の前に検査する。
 default_stages: [pre-commit, pre-push]
 
-# .mise/locks/ は mise lock が生成し、mise.lock が digest で参照する。整形すると digest が合わなくなるので、どの hook にも渡さない。
-exclude: ^\.mise/locks/
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       # ファイルを書き換える hook は commit 時だけに実行する。push 時は push する commit ではなく作業ツリーを見るので、
-      # 次の作業のファイルを書き換えて push を失敗させうる。push 時の Python の整形の検査は lint hook が行う。
+      # 次の作業のファイルを書き換えて push を失敗させうる。
       - id: trailing-whitespace
         stages: [pre-commit]
       - id: end-of-file-fixer
@@ -48,10 +45,12 @@ repos:
         entry: mise exec -- dprint fmt --allow-no-files
         types_or: [json, yaml, markdown, toml, dockerfile]
         stages: [pre-commit]
-      - id: actionlint
-        name: Lint GitHub Actions workflows with actionlint
+      # correctness profile は actionlint と同じ範囲の検査 (セキュリティの監査は zizmor が行う)。
+      # --strict-exit で error 以外 (warn・info) の所見も失敗にし、--shellcheck で shellcheck が無いときに run: の検査を黙って飛ばさない。
+      - id: jactionlint
+        name: Lint GitHub Actions workflows with jactionlint
         language: system
-        entry: mise exec -- actionlint
+        entry: mise exec -- jactionlint --profile correctness --strict-exit --shellcheck shellcheck
         types: [yaml]
         files: ^\.github/workflows/
       - id: hadolint
@@ -86,8 +85,9 @@ repos:
         entry: mise exec -- uv run --locked ruff format
         types: [python]
         stages: [pre-commit]
-      # ruff・import-linter・ty・pyright の設定は pyproject.toml にあり、版は uv.lock と mise.toml で決まるので、
+      # ruff・import-linter・ty の設定は pyproject.toml にあり、版は uv.lock と mise.toml で決まるので、
       # lint は設定だけの変更でも実行する。型検査と層の検査はファイル単位では行えないので、作業ツリー全体を検査する。
+      # push 時は作業ツリーを見るので、次の作業の途中の状態で push を止めないよう commit 時だけに実行する (push した変更は CI が検査する)。
       - id: lint
         name: Lint, check layers and type-check python with mise run lint
         language: system
@@ -95,6 +95,7 @@ repos:
         files: (\.pyi?$|^(pyproject\.toml|uv\.lock|\.python-version|mise\.toml|mise\.lock)$)
         pass_filenames: false
         include_deleted: true
+        stages: [pre-commit]
       - id: test
         name: Run python tests with mise run test
         language: system
@@ -114,8 +115,10 @@ repos:
         stages: [pre-commit]
       - id: commitlint
         name: Lint commit message with commitlint
-        # language: node により prek が node と依存を隔離環境へ自前インストールする
+        # language: node により prek が node と依存を隔離環境へ自前インストールする。
+        # 版を指定しないと、prek が管理する node が無い環境では手元の node を版を問わず使うので、commitlint が動く版 (22.12.0 以上) に限る。
         language: node
+        language_version: ">=22.12.0"
         additional_dependencies:
           ["@commitlint/cli@21.2.4", "@commitlint/config-conventional@21.2.4"]
         entry: commitlint --edit

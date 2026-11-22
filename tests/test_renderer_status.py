@@ -152,7 +152,7 @@ def test_position_without_media_has_no_seconds_or_uri(stack: Stack) -> None:
     assert position["track_metadata"] is None
 
 
-# README は位置の値の形式が崩れたときの秒数を決めていないが、モデルの秒数の項目は null を取り、
+# 仕様は位置の値の形式が崩れたときの秒数を決めていないが、モデルの秒数の項目は null を取り、
 # 元の文字列は秒数の付かない項目で返る。
 @pytest.mark.parametrize("reported", ["", "later", "1:xx:00"])
 def test_position_that_is_not_a_duration_has_no_seconds(

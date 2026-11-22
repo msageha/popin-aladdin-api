@@ -5,45 +5,34 @@ from urllib.parse import urlsplit
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from popin_aladdin_api.device.remote import (
-    DISCOVERY_UDP_PORT,
-    REMOTE_CMD_UDP_PORT,
-    REMOTE_REPLY_UDP_PORT,
-    REMOTE_TCP_PORT,
-    REMOTE_UDP_PORT,
-)
-from popin_aladdin_api.device.renderer import UPNP_PORT
-
 
 class Settings(BaseSettings):
     popin_aladdin_host: str = Field(
         min_length=1,
         description="デバイスの URL またはホスト名 / IP。ポートは各 *_PORT で指定する",
     )
-    upnp_port: int = Field(
-        default=UPNP_PORT, description="UPnP/DLNA MediaRenderer のポート"
-    )
+    upnp_port: int = Field(default=1481, description="UPnP/DLNA MediaRenderer のポート")
     description_path: str = Field(
         default="/", description="UPnP device description のパス"
     )
     control_tcp_port: int = Field(
-        default=REMOTE_TCP_PORT,
+        default=30913,
         description="独自プロトコル TCP (ライト・文字入力・音声・deeplink・照会)",
     )
     control_udp_port: int = Field(
-        default=REMOTE_UDP_PORT,
+        default=16735,
         description="独自プロトコル UDP (方向キー・ハードキー)",
     )
     control_cmd_udp_port: int = Field(
-        default=REMOTE_CMD_UDP_PORT,
+        default=16750,
         description="独自プロトコル UDP JSON コマンド (スクリーンショット・メモリ解放・実行時情報・電源断)",
     )
     control_reply_udp_port: int = Field(
-        default=REMOTE_REPLY_UDP_PORT,
+        default=16751,
         description="UDP JSON コマンドの応答を受け取るこのサーバー側のポート",
     )
     discovery_udp_port: int = Field(
-        default=DISCOVERY_UDP_PORT,
+        default=8100,
         description="デバイス発見のブロードキャスト先ポート",
     )
     timeout: float = Field(
@@ -56,5 +45,4 @@ class Settings(BaseSettings):
         return urlsplit(self.popin_aladdin_host).hostname or self.popin_aladdin_host
 
 
-# 必須の popin_aladdin_host は環境変数から読む。pyright は pydantic-settings の読み込みを知らず、引数の不足と誤検知する。
-settings = Settings()  # pyright: ignore[reportCallIssue]
+settings = Settings()

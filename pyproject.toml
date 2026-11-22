@@ -35,13 +35,6 @@ dev = [
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
-[tool.ruff]
-line-length = 88
-src = ["src", "tests"]
-
-[tool.ruff.format]
-line-ending = "lf"
-
 [tool.ruff.lint]
 # 例外メッセージは raise する箇所で URL やデバイスの応答を埋め込んで組み立て、HTTP の detail にそのまま出す。
 # そのため、メッセージを例外クラスへ移させる TRY003 と、raise の前に中間変数を挟ませる EM は採らない。
@@ -188,20 +181,12 @@ strict-equality-semantics = true
 [tool.ty.rules]
 missing-override-decorator = "error"
 blanket-ignore-comment = "error"
-
-[tool.pyright]
-include = ["src", "tests"]
-venvPath = "."
-venv = ".venv"
-pythonPlatform = "Linux"
-typeCheckingMode = "strict"
-# pyright は `type: ignore` を、括弧で規則を指定しても、行のすべての診断の抑制として扱う。
-# 抑制は、指定した規則だけを抑制する `pyright: ignore[<規則>]` で書く。
-enableTypeIgnoreComments = false
+# 既定で無効だが、型引数の書き忘れ (list が list[Unknown] になり検査が効かなくなる) と、実行時の NameError を検出する。
+missing-type-argument = "error"
+possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_functions = ["test_*"]
 strict = true
 # 依存の非推奨警告を見落とさない。
 filterwarnings = ["error"]
@@ -226,9 +211,8 @@ show_missing = true
 # Renovate の minimumReleaseAge と揃え、公開から 7 日未満の版を解決に使わない
 exclude-newer = "7 days"
 
-# UV_INDEX_URL やユーザー設定の index-url で uv.lock の registry が変わらないよう、それらより優先される既定の index を宣言する。
-# UV_DEFAULT_INDEX はこの宣言より優先され、UV_INDEX やユーザー設定の (explicit でない) 追加の index は既定の index より先に参照されるので、
-# どれかを設定して uv lock を実行すると uv.lock の取得元が変わりうる。
+# UV_INDEX_URL やユーザー設定の index-url で uv.lock の取得元が変わらないよう、それらより優先される既定の index を宣言する。
+# UV_DEFAULT_INDEX と、UV_INDEX・ユーザー設定の (explicit でない) 追加の index はこの宣言より先に効くので、設定した環境では変わりうる。
 [[tool.uv.index]]
 name = "flatt"
 url = "https://pypi.flatt.tech/simple/"

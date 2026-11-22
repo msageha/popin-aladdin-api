@@ -9,7 +9,7 @@ import pytest
 
 from tests.harness import Stack, serve_stack
 
-# README「独自プロトコル」の UDP キー入力の code。
+# docs/protocol.md「独自プロトコル」の UDP キー入力の code。
 _DPAD_CODES = {"home": 35, "up": 36, "right": 37, "down": 38, "ok": 49, "left": 50}
 _FOCUS_CODES = {"focus_plus": 253, "focus_minus": 254}
 _HARDWARE_CODES = {
@@ -92,7 +92,7 @@ def test_home_long_holds_home_for_a_second(stack: Stack) -> None:
     home = _DPAD_CODES["home"]
     timed = stack.device.received_timed_keys()
     assert [key for _, key in timed] == [_press(home)] * 30 + [_release(home)]
-    # README: 押下を 30 回送り、1 秒後に離上する。fake の記録は届いた時刻より遅れうり、押下と離上の
+    # docs/protocol.md: 押下を 30 回送り、1 秒後に離上する。fake の記録は届いた時刻より遅れうり、押下と離上の
     # 記録の間隔は負荷で縮みうるので、遅れても短くならない「要求を送り始めてから離上の記録まで」で
     # 1 秒を確かめる。
     assert timed[-1][0] - started >= 1.0

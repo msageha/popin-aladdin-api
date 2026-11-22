@@ -9,16 +9,13 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 COPY .python-version ./
-# runner で使わないもの (tcl/tk・terminfo・pip 等と、python3.14 が static link しているので不要な libpython の
+# runner で使わない大きなもの (tcl/tk・pip・ヘッダ等と、python3.14 が static link しているので不要な libpython の
 # 共有ライブラリ) を消す。インストール先は版と arch を名前に含むので glob で探す (cpython-3.14-linux-* は同じ実体への
 # symlink)。削除はサイズのためだけなので、配布物から対象が無くなっても build を止めない (-f)。
 RUN uv python install \
  && for p in /python/cpython-3.*.*-linux-*; do \
-      test -d "$p" && rm -rf -- "$p"/include "$p"/share "$p"/lib/libpython*.so* "$p"/lib/pkgconfig \
-        "$p"/lib/*tcl* "$p"/lib/tk* "$p"/lib/thread* \
-        "$p"/bin/idle* "$p"/bin/pip* "$p"/bin/pydoc* "$p"/bin/python*-config \
-        "$p"/lib/python3.*/site-packages/* "$p"/lib/python3.*/ensurepip "$p"/lib/python3.*/idlelib \
-        "$p"/lib/python3.*/tkinter "$p"/lib/python3.*/lib-dynload/_tkinter* "$p"/lib/python3.*/turtledemo "$p"/lib/python3.*/config-*; \
+      test -d "$p" && rm -rf -- "$p"/include "$p"/share "$p"/lib/libpython*.so* "$p"/lib/*tcl* "$p"/lib/tk* \
+        "$p"/lib/python3.*/site-packages/* "$p"/lib/python3.*/ensurepip "$p"/lib/python3.*/idlelib "$p"/lib/python3.*/tkinter; \
     done
 
 COPY pyproject.toml uv.lock ./

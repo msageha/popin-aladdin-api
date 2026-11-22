@@ -1,7 +1,7 @@
 """
 e2e テストの実行環境: popIn Aladdin を模した fake のデバイスと、それに接続した API サーバー。
 
-fake のデバイスは README「プロトコルの詳細」の制御面 (UPnP の HTTP と SOAP、TCP のフレーム、
+fake のデバイスは docs/protocol.md の制御面 (UPnP の HTTP と SOAP、TCP のフレーム、
 UDP のキー入力・JSON コマンド・発見) を localhost の空きポートで受け付け、受け取った操作を記録する。
 API サーバーは実機に対するのと同じ経路で動く。
 """
@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Collection, Generator, Mapping
+from collections.abc import Callable, Collection, Generator, Mapping, Sized
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,11 +51,11 @@ DEVICE_FIELDS = {
 }
 _SOAP_ENV = "http://schemas.xmlsoap.org/soap/envelope/"
 _FRAME_HEADER = struct.Struct("<IBB")
-# README「独自プロトコル」の発見の要求。
+# docs/protocol.md「独自プロトコル」の発見の要求。
 _DISCOVERY_REQUEST = (b"aladdin" + bytes([0x14])).ljust(1024, b"\0")
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# TCP のフレーム種別と JSON 種別 (README「独自プロトコル」)。
+# TCP のフレーム種別と JSON 種別 (docs/protocol.md「独自プロトコル」)。
 HEARTBEAT = (0, 0)
 VERSION = (3, 0)
 REMOTE_CONTROL = (1, 7)
@@ -65,7 +65,7 @@ DEEPLINK = (1, 15)
 APP_INFO = (1, 16)
 ALBUM = (1, 2)
 
-# UDP の JSON コマンドの controlCmd の (mode, type) (README「独自プロトコル」)。
+# UDP の JSON コマンドの controlCmd の (mode, type) (docs/protocol.md「独自プロトコル」)。
 SCREENSHOT = (9, 1)
 FREE_MEMORY = (9, 2)
 DEVICE_INFO = (32, 0)
@@ -105,17 +105,10 @@ class CloseConnection:
 
 
 CLOSE_CONNECTION = CloseConnection()
-# TCP の要求への応答: 要求と同じ種別のフレームで返す JSON の値・payload の bytes そのもの・要求の
-# payload から応答を作る関数、別の種別で返す `Frame`、応答を返さずに接続を閉じる `CLOSE_CONNECTION`、
-# 応答しない None のどれか。
-type TcpReply = (
-    JsonValue
-    | bytes
-    | Callable[[JsonValue], JsonValue]
-    | Frame
-    | CloseConnection
-    | None
-)
+# TCP の要求への応答: 要求と同じ種別のフレームで返す JSON の値・payload の bytes そのもの、
+# 別の種別で返す `Frame`、応答を返さずに接続を閉じる `CLOSE_CONNECTION` のどれか。
+# 応答を登録していない種別の要求には応答しない。
+type TcpReply = JsonValue | bytes | Frame | CloseConnection
 
 _DEFAULT_SOAP_OUTPUTS: dict[str, dict[str, str]] = {
     "GetTransportInfo": {
@@ -152,24 +145,8 @@ _DEFAULT_SOAP_OUTPUTS: dict[str, dict[str, str]] = {
     },
 }
 
-_DEFAULT_VERSION_REPLY: dict[str, JsonValue] = {
-    "code": 10,
-    "type": "JSON",
-    "model": "Aladdin 2",
-    "device_name": "Living room",
-    "pid": "PID-0001",
-    "aladdinId": "aladdin-0001",
-    "platform": "Android",
-    "osVersion": "9",
-    "sdkInt": 28,
-    "lang": "ja",
-    "country": "JP",
-    "totalSpace": 8_000_000_000,
-    "freeSpace": 2_000_000_000,
-    "serverAccess": True,
-    "featureAccess": {"focus": 1, "input": 1, "memory_release": 0},
-    "capability": {"screenshot": 1, "app_list": None},
-}
+# 照会の前に送る Version ハンドシェイクへの応答。内容を確かめるテストは自分で応答を登録する。
+_DEFAULT_VERSION_REPLY: dict[str, JsonValue] = {"code": 10, "model": "Aladdin 2"}
 
 DEFAULT_ALBUM_REPLY: dict[str, JsonValue] = {
     "count": 1,
@@ -180,23 +157,6 @@ DEFAULT_ALBUM_REPLY: dict[str, JsonValue] = {
     "freeSpace": 1_000_000,
     "totalSpace": 4_000_000,
     "lightVersion": "1.2.3",
-}
-
-_DEFAULT_COMMAND_REPLIES: dict[tuple[int, int], list[JsonValue | bytes]] = {
-    SCREENSHOT: [{"action": 30235, "imagePath": "http://%s:7434/screenshot.png"}],
-    DEVICE_INFO: [
-        {
-            "action": 30410,
-            "deviceName": "Aladdin 2",
-            "deviceMode": "normal",
-            "deviceApp": "YouTube",
-            "packageApp": "com.google.android.youtube.tv",
-            "runtime": 3600,
-            "deviceRom": 32,
-            "mst": "0",
-            "tips": "",
-        }
-    ],
 }
 
 
@@ -224,7 +184,7 @@ class Frame:
 
 # 記録が届き切ったことを確かめるために、fake が自分に送る印。
 _MARKER_PREFIX = "marker:"
-# 印を送る TCP のフレーム種別。README のどの種別とも重ならない。
+# 印を送る TCP のフレーム種別。docs/protocol.md のどの種別とも重ならない。
 _MARKER_FRAME = (255, 255)
 
 
@@ -281,10 +241,10 @@ class FakeAladdin:
     """
     1 台の popIn Aladdin を模したサーバー群。
 
-    UPnP は device description と、そこで宣言した controlURL の SOAP を受け付ける。TCP は README の
+    UPnP は device description と、そこで宣言した controlURL の SOAP を受け付ける。TCP は docs/protocol.md の
     フレームを読んで記録し、`respond_tcp` で登録した応答を返す。JSON コマンドの応答は、実機と同じく
     API サーバーの応答受信ポート (`reply_port`) へ送る。発見の要求には、要求の宛先 address を記録して
-    127.0.0.1 から応答する。どの制御面でも、届いたが README の形式として解釈できないものは記録し、
+    127.0.0.1 から応答する。どの制御面でも、届いたが docs/protocol.md の形式として解釈できないものは記録し、
     記録を読むときに失敗にする (送られなかったものと区別するため)。
     """
 
@@ -338,12 +298,8 @@ class FakeAladdin:
             HEARTBEAT: b"",
             VERSION: _DEFAULT_VERSION_REPLY,
             ALBUM: DEFAULT_ALBUM_REPLY,
-            APP_INFO: self._app_info_reply,
         }
-        self.installed_apps: dict[str, tuple[int, str]] = {}
-        self.command_replies: dict[tuple[int, int], list[JsonValue | bytes]] = {
-            k: list(v) for k, v in _DEFAULT_COMMAND_REPLIES.items()
-        }
+        self.command_replies: dict[tuple[int, int], list[JsonValue | bytes]] = {}
         self.discovery_replies: list[bytes] = []
         # 発見の要求を受けてから応答を送るまでの秒数。
         self.discovery_reply_delay = 0.0
@@ -448,11 +404,11 @@ class FakeAladdin:
 
     def wait_for_keys(self, *, count: int) -> None:
         """キー入力のデータグラムが count 個届くまで待つ。"""
-        self._wait_for(lambda: list(self._keys), count=count)
+        self._wait_for(lambda: self._keys, count=count)
 
     def wait_for_soap_calls(self, *, count: int) -> None:
         """SOAP アクションが count 個届くまで待つ。"""
-        self._wait_for(lambda: list(self._soap_calls), count=count)
+        self._wait_for(lambda: self._soap_calls, count=count)
 
     def received_discovery_requests(self) -> list[DiscoveryRequest]:
         """API がここまでに送った発見の要求。"""
@@ -464,7 +420,7 @@ class FakeAladdin:
             is_marker=lambda request, token: request.data == token.encode(),
         )
 
-    def _wait_for(self, records: Callable[[], list[object]], *, count: int) -> None:
+    def _wait_for(self, records: Callable[[], Sized], *, count: int) -> None:
         with self._lock:
             arrived = self._lock.wait_for(lambda: len(records()) >= count, timeout=5)
         assert arrived, f"{count} records did not arrive"
@@ -634,18 +590,6 @@ class FakeAladdin:
 
         return Handler
 
-    def _app_info_reply(self, request: JsonValue) -> JsonValue:
-        assert isinstance(request, dict)
-        package = request["pkgName"]
-        assert isinstance(package, str)
-        version_code, version_name = self.installed_apps.get(package, (0, ""))
-        return {
-            "pkgName": package,
-            "isInstalled": package in self.installed_apps,
-            "versionCode": version_code,
-            "versionName": version_name,
-        }
-
     def _tcp_reply(self, frame: Frame) -> bytes | CloseConnection | None:
         """フレームを記録し、返すフレームの bytes (CLOSE_CONNECTION か、返さないなら None) を返す。"""
         with self._lock:
@@ -657,8 +601,6 @@ class FakeAladdin:
         if isinstance(reply, Frame):
             body = json.dumps(reply.payload).encode()
             return _FRAME_HEADER.pack(len(body), reply.kind, reply.json_type) + body
-        if callable(reply):
-            reply = reply(frame.payload)
         body = reply if isinstance(reply, bytes) else json.dumps(reply).encode()
         return _FRAME_HEADER.pack(len(body), frame.kind, frame.json_type) + body
 

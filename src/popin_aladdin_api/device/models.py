@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlayMode(StrEnum):
@@ -158,76 +158,153 @@ class RendererStatus(BaseModel):
     position_seconds: float | None = Field(description="再生位置 (秒)", examples=[30.0])
 
 
-class RemoteVersion(BaseModel):
+class _DeviceReply(BaseModel):
+    """
+    独自プロトコルでデバイスが返す値。
+
+    デバイスが省いた nullable な項目は None にし、フィールド名と違うキーは validation_alias で受ける。
+    API の応答では全項目を常に返すので、既定値のある項目も応答の schema では required にする。
+    """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class RemoteVersion(_DeviceReply):
     """TCP 制御プロトコルの Version ハンドシェイクでデバイスが返す自己情報。"""
 
-    code: int | None = Field(description="プロトコル版", examples=[10])
-    model: str | None = Field(description="機種名", examples=["Aladdin 2"])
-    device_name: str | None = Field(description="デバイス名")
-    pid: str | None = Field(description="機体 ID")
-    aladdin_id: str | None = Field(description="Aladdin アカウント連携 ID")
-    platform: str | None = Field(description="OS 系統", examples=["Android", "webos"])
-    os_version: str | None = Field(description="OS 版")
-    sdk_int: int | None = Field(description="Android API level")
-    lang: str | None = Field(description="言語")
-    country: str | None = Field(description="国")
-    total_space: int | None = Field(description="ストレージ容量 (byte)")
-    free_space: int | None = Field(description="ストレージ空き (byte)")
-    server_access: bool | None = Field(description="クラウド接続の有無")
+    code: int | None = Field(default=None, description="プロトコル版", examples=[10])
+    model: str | None = Field(
+        default=None, description="機種名", examples=["Aladdin 2"]
+    )
+    device_name: str | None = Field(default=None, description="デバイス名")
+    pid: str | None = Field(default=None, description="機体 ID")
+    aladdin_id: str | None = Field(
+        default=None,
+        validation_alias="aladdinId",
+        description="Aladdin アカウント連携 ID",
+    )
+    platform: str | None = Field(
+        default=None, description="OS 系統", examples=["Android", "webos"]
+    )
+    os_version: str | None = Field(
+        default=None, validation_alias="osVersion", description="OS 版"
+    )
+    sdk_int: int | None = Field(
+        default=None, validation_alias="sdkInt", description="Android API level"
+    )
+    lang: str | None = Field(default=None, description="言語")
+    country: str | None = Field(default=None, description="国")
+    total_space: int | None = Field(
+        default=None, validation_alias="totalSpace", description="ストレージ容量 (byte)"
+    )
+    free_space: int | None = Field(
+        default=None, validation_alias="freeSpace", description="ストレージ空き (byte)"
+    )
+    server_access: bool | None = Field(
+        default=None, validation_alias="serverAccess", description="クラウド接続の有無"
+    )
     feature_access: dict[str, int | None] | None = Field(
-        description="機能ごとの利用可否 (1 = 利用可)。キーは focus / input / memory_release など"
+        default=None,
+        validation_alias="featureAccess",
+        description="機能ごとの利用可否 (1 = 利用可)。キーは focus / input / memory_release など",
     )
     capability: dict[str, int | None] | None = Field(
-        description="対応機能 (1 = 対応、null = 不明)。キーは screenshot / app_list"
+        default=None,
+        description="対応機能 (1 = 対応、null = 不明)。キーは screenshot / app_list",
     )
 
 
-class AlbumFile(BaseModel):
-    name: str | None = Field(description="ファイル名")
-    size: int | None = Field(description="byte")
-    type: int | None = Field(description="1 = 写真, 2 = サムネイル, 10..12 = 時計")
+class AlbumFile(_DeviceReply):
+    name: str | None = Field(default=None, description="ファイル名")
+    size: int | None = Field(default=None, description="byte")
+    type: int | None = Field(
+        default=None, description="1 = 写真, 2 = サムネイル, 10..12 = 時計"
+    )
 
 
-class RemoteAlbum(BaseModel):
+class RemoteAlbum(_DeviceReply):
     """フォトメモリー (デバイス内アルバム) の状態。"""
 
-    count: int | None = Field(description="保存されている写真の数")
-    total_space: int | None = Field(description="byte")
-    free_space: int | None = Field(description="byte")
-    light_version: str | None = Field(description="ライト部のファームウェア版")
-    files: list[AlbumFile] = Field(description="保存されているファイル")
+    count: int | None = Field(default=None, description="保存されている写真の数")
+    total_space: int | None = Field(
+        default=None, validation_alias="totalSpace", description="byte"
+    )
+    free_space: int | None = Field(
+        default=None, validation_alias="freeSpace", description="byte"
+    )
+    light_version: str | None = Field(
+        default=None,
+        validation_alias="lightVersion",
+        description="ライト部のファームウェア版",
+    )
+    files: list[AlbumFile] = Field(
+        validation_alias="list", description="保存されているファイル"
+    )
 
 
-class RemoteAppInfo(BaseModel):
+class RemoteAppInfo(_DeviceReply):
     """デバイス上のアプリの有無と版。"""
 
-    package: str | None = Field(description="package 名", examples=["jp.co.tver.tvapp"])
-    installed: bool | None = Field(description="インストール済みか")
-    version_code: int | None = Field(description="versionCode")
-    version_name: str | None = Field(description="versionName")
+    package: str | None = Field(
+        default=None,
+        validation_alias="pkgName",
+        description="package 名",
+        examples=["jp.co.tver.tvapp"],
+    )
+    installed: bool | None = Field(
+        default=None, validation_alias="isInstalled", description="インストール済みか"
+    )
+    version_code: int | None = Field(
+        default=None, validation_alias="versionCode", description="versionCode"
+    )
+    version_name: str | None = Field(
+        default=None, validation_alias="versionName", description="versionName"
+    )
 
 
-class RemoteDeviceInfo(BaseModel):
+class RemoteDeviceInfo(_DeviceReply):
     """UDP 制御チャネルの deviceInfo 応答 (action 30410)。前面アプリなど実行時の情報。"""
 
-    device_name: str | None = Field(description="デバイス名")
-    device_mode: str | None = Field(description="デバイスのモード")
-    foreground_app: str | None = Field(description="前面アプリ名")
-    foreground_package: str | None = Field(description="前面アプリの package")
-    runtime: int | None = Field(description="稼働時間 (デバイス報告値、単位不明)")
-    rom: int | None = Field(description="ROM 容量 (デバイス報告値)")
-    mst: str | None = Field(description="デバイス報告値 (用途不明)")
-    tips: str | None = Field(description="デバイス報告値 (用途不明)")
+    device_name: str | None = Field(
+        default=None, validation_alias="deviceName", description="デバイス名"
+    )
+    device_mode: str | None = Field(
+        default=None, validation_alias="deviceMode", description="デバイスのモード"
+    )
+    foreground_app: str | None = Field(
+        default=None, validation_alias="deviceApp", description="前面アプリ名"
+    )
+    foreground_package: str | None = Field(
+        default=None, validation_alias="packageApp", description="前面アプリの package"
+    )
+    runtime: int | None = Field(
+        default=None, description="稼働時間 (デバイス報告値、単位不明)"
+    )
+    rom: int | None = Field(
+        default=None,
+        validation_alias="deviceRom",
+        description="ROM 容量 (デバイス報告値)",
+    )
+    mst: str | None = Field(default=None, description="デバイス報告値 (用途不明)")
+    tips: str | None = Field(default=None, description="デバイス報告値 (用途不明)")
 
 
-class DiscoveredDevice(BaseModel):
+class DiscoveredDevice(_DeviceReply):
     """UDP 8100 ブロードキャストに応答した Aladdin。"""
 
-    ip_address: str | None = Field(description="IP アドレス")
-    model: str | None = Field(description="機種名", examples=["Aladdin 2"])
-    name: str | None = Field(description="デバイス名")
-    pid: str | None = Field(description="機体 ID")
-    mac: str | None = Field(description="MAC アドレス")
-    version: int | None = Field(description="プロトコル版")
-    zipcode: str | None = Field(description="設定されている郵便番号")
-    connected: bool | None = Field(description="他のクライアントが接続中か")
+    ip_address: str | None = Field(
+        default=None, validation_alias="ipAddress", description="IP アドレス"
+    )
+    model: str | None = Field(
+        default=None, description="機種名", examples=["Aladdin 2"]
+    )
+    name: str | None = Field(default=None, description="デバイス名")
+    pid: str | None = Field(default=None, description="機体 ID")
+    mac: str | None = Field(default=None, description="MAC アドレス")
+    version: int | None = Field(default=None, description="プロトコル版")
+    zipcode: str | None = Field(default=None, description="設定されている郵便番号")
+    connected: bool | None = Field(
+        default=None,
+        validation_alias="isConnected",
+        description="他のクライアントが接続中か",
+    )

@@ -33,9 +33,6 @@ from popin_aladdin_api.device.upnp import (
     parse_response,
 )
 
-UPNP_PORT = 1481
-DEFAULT_CAST_TITLE = "popin-aladdin-api"
-DEFAULT_UPNP_CLASS = "object.item.videoItem"
 MAX_VOLUME = 100
 
 AV_TRANSPORT = "AVTransport"
@@ -51,9 +48,9 @@ class RendererClient:
         self,
         host: str,
         *,
-        port: int = UPNP_PORT,
-        description_path: str = "/",
-        timeout: float = 10.0,
+        port: int,
+        description_path: str,
+        timeout: float,
     ) -> None:
         self.description_url = urljoin(f"http://{host}:{port}/", description_path)
         # デバイスは同じ LAN にいるので、実行環境の proxy の設定 (HTTP_PROXY や macOS のシステム設定) を
@@ -252,10 +249,10 @@ class RendererClient:
         self,
         uri: str,
         *,
-        title: str = DEFAULT_CAST_TITLE,
-        upnp_class: str = DEFAULT_UPNP_CLASS,
-        metadata: str | None = None,
-        autoplay: bool = True,
+        title: str,
+        upnp_class: str,
+        metadata: str | None,
+        autoplay: bool,
     ) -> None:
         """``uri`` を現在のメディアとして読み込み、``autoplay`` なら続けて再生する。"""
         if metadata is None:
