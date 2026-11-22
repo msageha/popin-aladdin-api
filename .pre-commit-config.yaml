@@ -45,10 +45,12 @@ repos:
         entry: mise exec -- dprint fmt --allow-no-files
         types_or: [json, yaml, markdown, toml, dockerfile]
         stages: [pre-commit]
-      - id: actionlint
-        name: Lint GitHub Actions workflows with actionlint
+      # correctness profile は actionlint と同じ範囲の検査 (セキュリティの監査は zizmor が行う)。
+      # --strict-exit で warn の所見も失敗にし、--shellcheck で shellcheck が無いときに run: の検査を黙って飛ばさない。
+      - id: jactionlint
+        name: Lint GitHub Actions workflows with jactionlint
         language: system
-        entry: mise exec -- actionlint
+        entry: mise exec -- jactionlint --profile correctness --strict-exit --shellcheck shellcheck
         types: [yaml]
         files: ^\.github/workflows/
       - id: hadolint

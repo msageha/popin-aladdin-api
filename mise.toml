@@ -4,14 +4,14 @@
 [tools]
 uv = "0.13.7"
 prek = "0.5.10"
-actionlint = "1.7.12"
+# actionlint の後継の fork。短い名前 (jactionlint) は Renovate が版を追えないので、aqua の backend で書く。
+"aqua:jdx/jactionlint" = "2.6.0"
 dprint = "0.64.3"
 gitleaks = "8.30.1"
 hadolint = "2.15.1"
 typos = "1.52.2"
 zizmor = "1.32.0"
-# actionlint は PATH に shellcheck があるときだけ run: スクリプトを検査するため、
-# ローカルと CI で検査内容が変わらないように pin する
+# jactionlint が run: スクリプトの検査に使う。ローカルと CI で検査内容が変わらないように pin する
 shellcheck = "0.11.0"
 
 [env]

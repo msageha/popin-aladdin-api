@@ -71,7 +71,7 @@ distroless には Python 3.14 のイメージが無いので、ビルダで uv �
 
 ## ツールと依存
 
-ツール (uv / prek / dprint / actionlint / shellcheck / hadolint / typos / zizmor / gitleaks) は `mise.toml` の `[tools]` で exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。
+ツール (uv / prek / dprint / jactionlint / shellcheck / hadolint / typos / zizmor / gitleaks) は `mise.toml` の `[tools]` で exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。
 CI (`ci.yaml`) もローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。
 `[tools]` を手で変更したら `mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の `mise install --locked` が失敗します)。
 
@@ -109,7 +109,8 @@ Python の依存は、`pyproject.toml` の `[[tool.uv.index]]` で宣言した `
   `popin_aladdin_api`・`api`・`device` の直下にモジュールを足したら、`exhaustive = true` の契約の `layers` にも足します。
 - [dprint](https://dprint.dev/): json / markdown / toml / yaml / Dockerfile のフォーマッタ。
   plugin の WASM URL は `dprint.json` に `url@sha256` の checksum 付きで pin します。`uv.lock` / `mise.lock` は対象外です。
-- [actionlint](https://github.com/rhysd/actionlint): workflow の静的検査。`run:` スクリプトの検査に [shellcheck](https://github.com/koalaman/shellcheck) を使います。
+- [jactionlint](https://jactionlint.jdx.dev/) (actionlint の fork): workflow の静的検査。`run:` スクリプトの検査に [shellcheck](https://github.com/koalaman/shellcheck) を使います。
+  actionlint と同じ範囲の `correctness` profile で、`warn` の所見も失敗にします。セキュリティの監査は zizmor が行います。
 - [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。
   `.hadolint.yaml` で style を含む全 severity を失敗にし、ベースイメージの registry を docker.io / ghcr.io / gcr.io に限り、OCI label (`org.opencontainers.image.source` / `licenses`) を必須にしています。
   `label-schema` に無い label は拒否するので、label を足すときはそこにも足します。
