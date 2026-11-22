@@ -4,7 +4,7 @@ import pytest
 
 from tests.harness import REMOTE_CONTROL, Frame, Stack
 
-# README「独自プロトコル」の RemoteControl の action。
+# docs/protocol.md「独自プロトコル」の RemoteControl の action。
 _LIGHT_CODES = {
     "switch": 31,
     "brighter": 32,

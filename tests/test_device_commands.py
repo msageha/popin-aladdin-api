@@ -18,7 +18,7 @@ from tests.strategies import as_json
 
 
 def _command(mode_type: tuple[int, int]) -> dict[str, JsonValue]:
-    """README「独自プロトコル」の UDP JSON コマンド。"""
+    """docs/protocol.md「独自プロトコル」の UDP JSON コマンド。"""
     mode, command_type = mode_type
     return {
         "action": 20000,
@@ -47,7 +47,7 @@ def test_capture_returns_image_url_on_the_device_host(stack: Stack) -> None:
     response = stack.api.post("/api/capture")
 
     assert response.status_code == 200
-    # README: imagePath の %s はデバイスの IP を入れる位置。
+    # docs/protocol.md: imagePath の %s はデバイスの IP を入れる位置。
     assert response.json() == {
         "action": "capture",
         "image_url": "http://127.0.0.1:7434/screenshot/1.png",

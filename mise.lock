@@ -96,46 +96,6 @@ url = "https://github.com/dprint/dprint/releases/download/0.64.3/dprint-x86_64-p
 url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/667629154"
 provenance = "github-attestations"
 
-[[tools.fnox]]
-version = "1.47.0"
-backend = "packslip:github.com/jdx/fnox"
-specifiers = ["v1.47.0"]
-
-[tools.fnox."platforms.linux-arm64"]
-checksum = "sha256:11a347e775fe0531f0b767c38fa9f6a2848f10b04f2d6824680821c56fe11da1"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-aarch64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.linux-arm64-musl"]
-checksum = "sha256:310ef903464817770823f9c4d3189c0f9457ec1c57463451059eefd31046de97"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-aarch64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.linux-x64"]
-checksum = "sha256:6d48c4b088a713fa976e5fdbe869c7e0620f77a1e9e6ad1d71c6f4523d7aafb4"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-x86_64-unknown-linux-gnu.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.linux-x64-musl"]
-checksum = "sha256:d371fcc893f4abc660ff8f10b5c6fe36745d81ba6ae094c22c8fe4dbdaf17e4f"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-x86_64-unknown-linux-musl.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.macos-arm64"]
-checksum = "sha256:e1afc59116fe9bfee645f3e0d0353b0f7ff68ce4a76bc6c516da7aedd9a47179"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-aarch64-apple-darwin.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.macos-x64"]
-checksum = "sha256:0412589afdf46dfe6fa1b7587b7b850e45fbf472417168bab09dc300fac0d701"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-x86_64-apple-darwin.tar.gz"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
-[tools.fnox."platforms.windows-x64"]
-checksum = "sha256:695065d180cbb2e431cd7a6e762f00b37ec5648dff78c47dfbba08c343a0decc"
-url = "https://github.com/jdx/fnox/releases/download/v1.47.0/fnox-x86_64-pc-windows-msvc.zip"
-signer = "sigstore-oidc:https://github.com/jdx/fnox/.github/workflows/release.yml"
-
 [[tools.gitleaks]]
 version = "8.30.1"
 backend = "aqua:gitleaks/gitleaks"
@@ -222,45 +182,6 @@ checksum = "sha256:01d927294962b5387f9ead4f18679158452be4f17c765ad0bdffe5264b9c7
 url = "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-windows-x86_64.exe"
 url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/496546508"
 provenance = "github-attestations"
-
-[[tools.node]]
-version = "26.13.1"
-backend = "core:node"
-specifiers = ["26.13.1"]
-
-[tools.node."platforms.linux-arm64"]
-checksum = "sha256:80a330b35415382878df18d41afbd106ea89bfb3be0087d6608e289a14c5cc7d"
-url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-linux-arm64.tar.gz"
-
-[tools.node."platforms.linux-arm64-musl"]
-checksum = "sha256:42684e7f1830ef9eaadd040672cba41bbaff9549d834600699f92ee1ee5b1fb1"
-url = "https://unofficial-builds.nodejs.org/download/release/v26.13.1/node-v26.13.1-linux-arm64-musl.tar.gz"
-
-[tools.node."platforms.linux-x64"]
-checksum = "sha256:518674de2b621728a5e4486f5fb3b7d2900bb3cc4aa97969edaa463db99f9778"
-url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-linux-x64.tar.gz"
-
-[tools.node."platforms.linux-x64-musl"]
-checksum = "sha256:04bf9ed3e32ea139c9af52f6dd06879ff6f8880555a0aa1183ef2d156c0e02d3"
-url = "https://unofficial-builds.nodejs.org/download/release/v26.13.1/node-v26.13.1-linux-x64-musl.tar.gz"
-
-[tools.node."platforms.macos-arm64"]
-checksum = "sha256:aec2514ea1ceb2ba52455e9ec65986f6749a06dd759e5db2a72e6889668c9735"
-url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-darwin-arm64.tar.gz"
-
-[tools.node."platforms.macos-x64"]
-checksum = "sha256:82bb96078a24ca50b9c9a38f2379e6be6d87171fcd400fc14c8934b3bce96e2f"
-url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-darwin-x64.tar.gz"
-
-[tools.node."platforms.windows-x64"]
-checksum = "sha256:e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f1f7"
-url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-win-x64.zip"
-
-[[tools."npm:pyright"]]
-version = "1.1.414"
-aube = { path = ".mise/locks/npm-pyright/1.1.414", digest = "sha256:69cd62e5613c907964fbb78b05a85eb9d12a503285d716f6529144cc884cf656" }
-backend = "npm:pyright"
-specifiers = ["1.1.414"]
 
 [[tools.prek]]
 version = "0.5.10"

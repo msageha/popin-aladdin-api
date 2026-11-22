@@ -4,11 +4,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from popin_aladdin_api.device.models import LightButton, PlayMode, ProjectorKey
-from popin_aladdin_api.device.renderer import (
-    DEFAULT_CAST_TITLE,
-    DEFAULT_UPNP_CLASS,
-    MAX_VOLUME,
-)
+from popin_aladdin_api.device.renderer import MAX_VOLUME
 
 # SOAP の action / 引数名はそのまま XML 要素名になるので、XML の名前として妥当な文字列に限る。
 type XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
@@ -22,11 +18,10 @@ class _Request(BaseModel):
     def _require_json_values(cls, data: object) -> object:
         # 本文の parser は孤立した surrogate (U+D800 など) と NaN・Infinity も通すが、前者は UTF-8 で
         # 表せず、後者は JSON の値ではないので、デバイスへ送る前に拒否する。JSON の object でない本文は
-        # モデルの検証に任せる。data を直接絞り込むと、戻り値の型が dict[Unknown, Unknown] になる。
-        body: object = data
-        if isinstance(body, dict):
+        # モデルの検証に任せる。
+        if isinstance(data, dict):
             try:
-                json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
+                json.dumps(data, ensure_ascii=False, allow_nan=False).encode()
             except ValueError as err:
                 raise ValueError(
                     "request must not contain NaN, Infinity or unpaired surrogates"
@@ -73,10 +68,10 @@ class CastRequest(_Request):
         examples=["http://192.168.1.50:8200/video/sample.mp4"],
     )
     title: str = Field(
-        default=DEFAULT_CAST_TITLE, description="生成する DIDL-Lite に入れる dc:title"
+        default="popin-aladdin-api", description="生成する DIDL-Lite に入れる dc:title"
     )
     upnp_class: str = Field(
-        default=DEFAULT_UPNP_CLASS,
+        default="object.item.videoItem",
         description="DIDL-Lite の upnp:class",
         examples=[
             "object.item.videoItem",

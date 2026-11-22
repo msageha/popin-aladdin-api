@@ -20,9 +20,9 @@
   "schedule": ["before 9am on monday"],
   "packageRules": [
     {
-      "description": ".mise/locks/ の package.json は mise lock が npm: backend のツール (pyright) の依存の lock と一緒に生成する manifest。npm manager が通常の package として更新すると、mise.toml の pin や aube-lock.yaml とずれるので対象外にする。ツールの更新は mise manager が mise.lock と sidecar をまとめて行う",
-      "matchManagers": ["npm"],
-      "matchFileNames": [".mise/locks/**"],
+      "description": "lock file maintenance は uv.lock だけに行う。mise.toml のツールは exact version で pin しているので、mise.lock は版の bump と同じ PR で更新すれば足りる",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
       "enabled": false
     },
     {
@@ -39,8 +39,7 @@
     {
       "description": "patch/minor は minimumReleaseAge (7日) 経過後、CI green を条件に自動マージする。merge は Renovate 自身が全 status check の成功を確認して行う (platformAutomerge: false)。GitHub の auto-merge は required status check の無いリポジトリでは CI 完了を待たずに merge するため使わない。major は供給網攻撃対策の猶予期間だけでは不十分なため対象外とし、人手レビューを必須とする",
       "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true,
-      "automergeType": "pr"
+      "automerge": true
     },
     {
       "description": "Dockerfile のベースイメージは公開日時が無く 7 日の猶予期間を置けないので、自動マージせず人手でレビューする。自動マージ対象外の更新が集約 PR に入ると group 全体が自動マージされなくなるので、別の PR に分ける",
@@ -51,11 +50,10 @@
       "automerge": false
     },
     {
-      "description": "lock file maintenance には release timestamp が無く、minimumReleaseAge の判定が常に pending になる。7 日の制約は pyproject.toml の exclude-newer で守る。mise.lock の更新は mise.toml で固定した版の配布物の情報に限られる。CI が green なら自動 merge する",
+      "description": "lock file maintenance には release timestamp が無く、minimumReleaseAge の判定が常に pending になる。7 日の制約は pyproject.toml の exclude-newer で守る。CI が green なら自動 merge する",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "minimumReleaseAge": null,
-      "automerge": true,
-      "automergeType": "pr"
+      "automerge": true
     }
   ],
   "customManagers": [

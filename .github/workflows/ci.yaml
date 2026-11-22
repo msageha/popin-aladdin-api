@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # push トリガーは置かない: main は PR 必須 (ruleset。README「GitHub リポジトリ設定」参照) なので
+  # push トリガーは置かない: main は PR 必須 (ruleset。docs/development.md「GitHub リポジトリ設定」参照) なので
   # PR で検証済みの内容しか入らない。
   # デフォルト types の明示: closed 等 CI が不要な PR イベントでは走らせない
   pull_request:
@@ -14,7 +14,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# job の name がそのまま required status check の名前になる (README「GitHub リポジトリ設定」参照)。
+# job の name がそのまま required status check の名前になる (docs/development.md「GitHub リポジトリ設定」参照)。
 jobs:
   prek:
     name: prek
@@ -30,12 +30,14 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
-      # lint hook (mise run lint) は uv run --locked で動くため、uv.lock と pyproject.toml の不整合もここで失敗する
+      # lint hook (mise run lint) は uv run --locked で動くため、uv.lock と pyproject.toml の不整合もここで失敗する。
+      # zizmor は次の step で online audit 込みで、gitleaks は gitleaks job で全履歴を検査する
+      # (gitleaks の hook は staged の差分だけを見るので、CI の checkout では何も検査しない)。
       - name: Run prek
-        run: mise run pre-commit
+        run: mise exec -- prek run --all-files
+        env:
+          SKIP: no-commit-to-branch,zizmor,gitleaks
 
-      # prek の zizmor hook は token が無く offline audit だけになるので、online audit
-      # (impostor-commit・known-vulnerable-actions 等) を含めてここで実行する。
       # token は他の hook に渡さないよう、この step だけに渡す
       - name: Run zizmor with online audits
         run: mise exec -- zizmor --persona auditor --strict-collection .
@@ -54,11 +56,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # この job が使う gitleaks だけを入れる。postinstall の hook (prek install) は入れていない prek を使うので走らせない。
       - name: Install mise
         uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: gitleaks
+        env:
+          MISE_NO_HOOKS: "1"
 
       - name: Run gitleaks
-        run: mise exec -- gitleaks git --redact -v .
+        run: mise exec gitleaks -- gitleaks git --redact -v .
 
   verify:
     name: verify
@@ -70,11 +77,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # テストが使うのは uv (と uv.lock の依存) だけなので、ほかのツールは入れない。
+      # postinstall の hook (prek install) は入れていない prek を使うので走らせない。
       - name: Install mise
         uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: uv
+        env:
+          MISE_NO_HOOKS: "1"
 
       - name: Run tests
-        run: mise run test
+        run: mise run --skip-tools test
 
   # ランナーの distroless には shell が無く、builder から写した Python と venv は base や uv の更新で壊れうるので、
   # 両 arch で実際に build して起動を確かめる。

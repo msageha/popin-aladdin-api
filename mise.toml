@@ -6,7 +6,6 @@ uv = "0.13.7"
 prek = "0.5.10"
 actionlint = "1.7.12"
 dprint = "0.64.3"
-fnox = "v1.47.0"
 gitleaks = "8.30.1"
 hadolint = "2.15.1"
 typos = "1.52.2"
@@ -14,19 +13,20 @@ zizmor = "1.32.0"
 # actionlint は PATH に shellcheck があるときだけ run: スクリプトを検査するため、
 # ローカルと CI で検査内容が変わらないように pin する
 shellcheck = "0.11.0"
-"npm:pyright" = "1.1.414"
-# npm: backend が pyright を npm で入れるので、node も pin する
-node = "26.13.1"
 
 [env]
 POPIN_ALADDIN_HOST = "http://172.16.1.113"
 
 [tasks.dev]
-description = "Run the API server with auto-reload on http://127.0.0.1:8000"
+description = "API サーバーを http://127.0.0.1:8000 で起動する (コードを変更すると自動で再起動する)"
 run = "uv run --locked uvicorn popin_aladdin_api.main:app --reload --host 127.0.0.1 --port 8000"
 
 [tasks.test]
-description = "Run pytest under coverage and print the report"
+description = """
+テストを実行し、coverage を表示する。
+
+テストは実機に接続せず、テスト用の偽のデバイスを相手に動く。
+"""
 # 計測は worker・API サーバーのプロセスごとの断片に分かれ、report がまとめて集計する。
 # 中断した実行や、同じ checkout で並行して走る実行 (手動と pre-push の hook 等) の断片を混ぜないよう、
 # 実行ごとの一時ディレクトリに置く。
@@ -46,7 +46,11 @@ fi
 """
 
 [tasks.lint]
-description = "Check lint and formatting (ruff), layer dependencies (import-linter) and types (ty / pyright)"
+description = """
+Python のコードを、ファイルを書き換えずに検査する (lint・整形・モジュール間の依存・型)。
+
+1 つの検査が失敗しても残りを実行し、最後に失敗を返す。
+"""
 # 1 つ目の失敗で止めず、全部の検査の結果を出してから失敗を返す。
 run = """
 #!/usr/bin/env bash
@@ -55,12 +59,11 @@ uv run --locked ruff check . || status=1
 uv run --locked ruff format --check . || status=1
 uv run --locked lint-imports || status=1
 uv run --locked ty check || status=1
-pyright || status=1
 exit "$status"
 """
 
 [tasks.format]
-description = "Format python sources with ruff and sort imports"
+description = "Python のコードの import を並べ替え、整形する (ファイルを書き換える)"
 # ruff format は import を並べ替えないので、import の並びの規則 (I) の修正を先に適用する。
 run = [
   "uv run --locked ruff check --select I --fix .",
@@ -68,22 +71,36 @@ run = [
 ]
 
 [tasks.pre-commit]
-description = "Run the pre-commit stage hooks on all tracked files with prek (same as the CI prek job)"
+description = """
+commit 時の hook を、git で追跡している全ファイルに実行する。
+
+整形の hook はファイルを書き換える。main への commit を止める hook は実行しない。
+"""
 # no-commit-to-branch は commit 先のブランチを見る hook で、検証には関係しない。main を checkout したままでも検証できるよう外す。
 run = "SKIP=no-commit-to-branch prek run --all-files"
 
 [tasks.build-image]
-description = "Build the Docker image popin-aladdin-api:latest"
+description = "Docker イメージ `popin-aladdin-api:latest` を build する"
 run = "docker build -t popin-aladdin-api:latest ."
 
 [tasks.run-image]
-description = "Run the Docker image on port 8000 (and the UDP reply port) with the settings from the environment"
+description = """
+Docker イメージ `popin-aladdin-api:latest` を build して起動する。
+
+設定されている環境変数をコンテナに渡し、root filesystem を read-only にして capability をすべて外した状態で起動する。
+API はホストのすべてのネットワークインターフェースの 8000/tcp に公開する。デバイスからの UDP の応答を受けるため、`CONTROL_REPLY_UDP_PORT` (既定 16751) も UDP で公開する。
+"""
+depends = ["build-image"]
 # -e NAME (値なし) は設定されている変数だけを渡すので、未設定の任意項目にはアプリ (settings.py) の既定値が使われる。
 # UDP JSON コマンドの応答はデバイスからホストの CONTROL_REPLY_UDP_PORT に届くので、container の同じポートへ公開する。
 run = "docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges -p 8000:8000 -p ${CONTROL_REPLY_UDP_PORT:-16751}:${CONTROL_REPLY_UDP_PORT:-16751}/udp -e POPIN_ALADDIN_HOST -e UPNP_PORT -e DESCRIPTION_PATH -e CONTROL_TCP_PORT -e CONTROL_UDP_PORT -e CONTROL_CMD_UDP_PORT -e CONTROL_REPLY_UDP_PORT -e DISCOVERY_UDP_PORT -e TIMEOUT popin-aladdin-api:latest"
 
 [tasks.check-image]
-description = "Build the Docker image and check that it serves /api/health with a read-only root filesystem and no capabilities"
+description = """
+Docker イメージを build し、起動して `/api/health` が応答するかを確かめる (CI の `image` job と同じ)。
+
+デバイスには接続しない。root filesystem を read-only にし、capability をすべて外した状態で確かめる。
+"""
 depends = ["build-image"]
 # /api/health はデバイスに接続しないので、ダミーの接続先で起動できる。host 側の port は空きを Docker に選ばせ、開発サーバーと衝突させない。
 run = """
@@ -103,54 +120,19 @@ fi
 """
 
 [tasks.clean]
-description = "Remove caches and coverage artifacts"
+description = "検査とテストが作るキャッシュを削除する"
 run = [
-  "find . -path ./.venv -prune -o -name '__pycache__' -type d -prune -exec rm -r {} +",
-  "rm -rf .pytest_cache .ruff_cache .ty_cache .import_linter_cache .hypothesis htmlcov .coverage .coverage.*",
+  "find src tests -name '__pycache__' -type d -prune -exec rm -r {} +",
+  "rm -rf .pytest_cache .ruff_cache .ty_cache .import_linter_cache .hypothesis",
 ]
 
 [tasks.docs]
-description = "Sync the task list embedded in README.md with mise.toml"
-run = "mise generate task-docs --inject --output README.md"
+description = """
+README.md のタスク一覧を、mise.toml のタスクの定義から生成し直す。
 
-# template から生成したリポジトリで実行し、共通ファイルが template の main からどれだけ離れたかを見る。
-# README.md / CODEOWNERS / CLAUDE.md / mise.lock はリポジトリ固有に書き換える前提なので対象外。
-# claude.yaml / claude-sweep.yaml は GitHub 経由で Claude を使わないため取り込んでおらず、対象外。
-[tasks.template-diff]
-description = "Diff shared files against dope-corp/template main"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-repo="dope-corp/template"
-files=(
-  .editorconfig .gitattributes .gitignore .pre-commit-config.yaml commitlint.config.mjs
-  dprint.json fnox.toml mise.toml renovate.json
-  .github/PULL_REQUEST_TEMPLATE.md
-  .github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug_report.yaml .github/ISSUE_TEMPLATE/feature_request.yaml
-  .github/workflows/ci.yaml
-)
-err="$(mktemp)"
-trap 'rm -f "${err}"' EXIT
-failed=0
-for f in "${files[@]}"; do
-  if ! upstream="$(gh api "repos/${repo}/contents/${f}" -H 'Accept: application/vnd.github.raw+json' 2>"${err}")"; then
-    # 404 は template 側に無いファイル (skip)。それ以外 (未認証・通信障害・rate limit) は比較できていないので失敗にする
-    if grep -q 'HTTP 404' "${err}"; then
-      echo "!! ${f}: not in ${repo} main (skipped)"
-    else
-      echo "!! ${f}: fetch failed: $(cat "${err}")" >&2
-      failed=1
-    fi
-    continue
-  fi
-  if [[ ! -f "${f}" ]]; then
-    echo "!! ${f}: missing locally"
-    continue
-  fi
-  diff -u --label "template/${f}" --label "${f}" <(printf '%s\n' "${upstream}") "${f}" || true
-done
-exit "${failed}"
-'''
+mise.toml か README.md を commit するときは、hook が自動で実行する。
+"""
+run = "mise generate task-docs --inject --output README.md"
 
 [hooks]
 # .venv はここでは作らない: uv sync が古い uv.lock を書き換えると CI の `uv run --locked` が不整合を検出できなくなる。

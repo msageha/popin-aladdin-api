@@ -35,13 +35,6 @@ dev = [
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
-[tool.ruff]
-line-length = 88
-src = ["src", "tests"]
-
-[tool.ruff.format]
-line-ending = "lf"
-
 [tool.ruff.lint]
 # 例外メッセージは raise する箇所で URL やデバイスの応答を埋め込んで組み立て、HTTP の detail にそのまま出す。
 # そのため、メッセージを例外クラスへ移させる TRY003 と、raise の前に中間変数を挟ませる EM は採らない。
@@ -189,19 +182,8 @@ strict-equality-semantics = true
 missing-override-decorator = "error"
 blanket-ignore-comment = "error"
 
-[tool.pyright]
-include = ["src", "tests"]
-venvPath = "."
-venv = ".venv"
-pythonPlatform = "Linux"
-typeCheckingMode = "strict"
-# pyright は `type: ignore` を、括弧で規則を指定しても、行のすべての診断の抑制として扱う。
-# 抑制は、指定した規則だけを抑制する `pyright: ignore[<規則>]` で書く。
-enableTypeIgnoreComments = false
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_functions = ["test_*"]
 strict = true
 # 依存の非推奨警告を見落とさない。
 filterwarnings = ["error"]
