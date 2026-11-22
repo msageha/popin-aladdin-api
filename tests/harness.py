@@ -1,7 +1,7 @@
 """
 e2e テストの実行環境: popIn Aladdin を模した fake のデバイスと、それに接続した API サーバー。
 
-fake のデバイスは docs/protocol.mdの制御面 (UPnP の HTTP と SOAP、TCP のフレーム、
+fake のデバイスは docs/protocol.md の制御面 (UPnP の HTTP と SOAP、TCP のフレーム、
 UDP のキー入力・JSON コマンド・発見) を localhost の空きポートで受け付け、受け取った操作を記録する。
 API サーバーは実機に対するのと同じ経路で動く。
 """

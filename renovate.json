@@ -20,29 +20,29 @@
   "schedule": ["before 9am on monday"],
   "packageRules": [
     {
-      "description": "lock file maintenance は uv.lock だけに行う。mise.toml のツールは exact version で pin しているので、mise.lock は版の bump と同じ PR で更新すれば足りる",
+      "description": "lock file maintenance は uv.lock だけに行う。mise.toml のツールは exact version なので、mise.lock は版の bump と同じ PR で更新すれば足りる",
       "matchManagers": ["mise"],
       "matchUpdateTypes": ["lockFileMaintenance"],
       "enabled": false
     },
     {
-      "description": "docker datasource が公開日時を取得できるのは Docker Hub だけで、Dockerfile のベースイメージ (GHCR・GCR) は minimumReleaseAge を判定できず、既定 (timestamp-required) では更新が無期限に保留される。公開日時が無いときは age check を省いて PR を作る",
+      "description": "Dockerfile のベースイメージ (GHCR・GCR) は docker datasource が公開日時を取得できず、既定 (timestamp-required) では更新が無期限に保留されるので、公開日時が無くても PR を作る",
       "matchDatasources": ["docker"],
       "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
-      "description": "PR の乱立を防ぐため、major 以外 (minor/patch/pin/digest) の更新は manager・エコシステム横断で 1 つの PR に集約する。major はグルーピングせず個別 PR で人手レビューする",
+      "description": "PR の乱立を防ぐため、major 以外の更新を manager を問わず 1 つの PR にまとめる。major は個別の PR で人手でレビューする",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "groupName": "all non-major dependencies",
       "groupSlug": "all-minor-patch"
     },
     {
-      "description": "patch/minor は minimumReleaseAge (7日) 経過後、CI green を条件に自動マージする。merge は Renovate 自身が全 status check の成功を確認して行う (platformAutomerge: false)。GitHub の auto-merge は required status check の無いリポジトリでは CI 完了を待たずに merge するため使わない。major は供給網攻撃対策の猶予期間だけでは不十分なため対象外とし、人手レビューを必須とする",
+      "description": "patch/minor は公開から 7 日経過後に、Renovate が全 status check の成功を確かめて自動で merge する (GitHub の auto-merge は required status check が無いと CI を待たずに merge するので platformAutomerge: false)。major は猶予期間だけでは供給網攻撃を防ぎきれないので人手でレビューする",
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     },
     {
-      "description": "Dockerfile のベースイメージは公開日時が無く 7 日の猶予期間を置けないので、自動マージせず人手でレビューする。自動マージ対象外の更新が集約 PR に入ると group 全体が自動マージされなくなるので、別の PR に分ける",
+      "description": "Dockerfile のベースイメージは公開日時が無く 7 日の猶予を置けないので、自動で merge せず人手でレビューする。自動 merge しない更新が集約 PR に入ると group 全体が自動 merge されなくなるので、別の PR に分ける",
       "matchDatasources": ["docker"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest", "pinDigest"],
       "groupName": "docker base images",
@@ -50,7 +50,7 @@
       "automerge": false
     },
     {
-      "description": "lock file maintenance には release timestamp が無く、minimumReleaseAge の判定が常に pending になる。7 日の制約は pyproject.toml の exclude-newer で守る。CI が green なら自動 merge する",
+      "description": "lock file maintenance には公開日時が無く minimumReleaseAge の判定が常に pending になるので、7 日の猶予は pyproject.toml の exclude-newer で守り、CI が通れば自動で merge する",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "minimumReleaseAge": null,
       "automerge": true

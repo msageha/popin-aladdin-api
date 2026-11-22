@@ -1,9 +1,7 @@
 name: CI
 
 on:
-  # push トリガーは置かない: main は PR 必須 (ruleset。docs/development.md「GitHub リポジトリ設定」参照) なので
-  # PR で検証済みの内容しか入らない。
-  # デフォルト types の明示: closed 等 CI が不要な PR イベントでは走らせない
+  # main は PR 必須 (docs/development.md「GitHub リポジトリ設定」) で、PR の CI を通ったものしか入らないので、push では走らせない。
   pull_request:
     types: [opened, synchronize, reopened]
 

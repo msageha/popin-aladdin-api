@@ -3,7 +3,15 @@
 [![CI](https://github.com/msageha/popin-aladdin-api/actions/workflows/ci.yaml/badge.svg?event=pull_request)](https://github.com/msageha/popin-aladdin-api/actions/workflows/ci.yaml)
 
 天井照明付きプロジェクター popIn Aladdin を、同じ LAN から HTTP で操作する非公式の REST サーバーです。
-クラウドを介さず、デバイスに直接つないで次の操作をします。
+クラウドを介さず、デバイスに直接つなぎます。
+
+```mermaid
+flowchart LR
+    client([HTTP client]) -- "HTTP (REST)" --> api[popin-aladdin-api]
+    api -- "UPnP/DLNA (SOAP)<br/>独自の TCP / UDP" --> dev[(popIn Aladdin)]
+```
+
+できること:
 
 - 再生の操作・音量・ミュート、任意のメディア URL の再生 (キャスト)
 - シーリングライトの点灯・消灯・明るさ・色温度
@@ -15,20 +23,22 @@
 
 ## セットアップ
 
-[mise](https://mise.jdx.dev/) を使います。clone したリポジトリのルートで実行します。Python と依存は、最初の `mise run dev` (か `mise run test`) で uv が用意します。
+[mise](https://mise.jdx.dev/) を使います。
 
-```bash
-mise trust
-mise install
-```
+1. clone したリポジトリのルートでツールを入れます。Python と依存は、最初の `mise run dev` で uv が用意します。
 
-`mise.toml` には作者の環境の接続先が書かれていて、シェルで設定した同名の環境変数より優先されます。
-自分のデバイスの IP アドレスかホスト名を、git 管理外の `mise.local.toml` に書いてください (`mise.toml` より優先されます)。
+   ```bash
+   mise trust
+   mise install
+   ```
 
-```toml
-[env]
-POPIN_ALADDIN_HOST = "192.168.1.20"
-```
+2. 接続先のデバイスの IP アドレスかホスト名を、git 管理外の `mise.local.toml` に書きます。
+   `mise.toml` には作者の環境の接続先があり、シェルの環境変数より優先されるので、シェルではなくこのファイルで上書きします。
+
+   ```toml
+   [env]
+   POPIN_ALADDIN_HOST = "192.168.1.20"
+   ```
 
 ## 起動
 
@@ -36,8 +46,10 @@ POPIN_ALADDIN_HOST = "192.168.1.20"
 mise run dev
 ```
 
-`curl http://127.0.0.1:8000/api/health` の応答の `host` で、接続先を確かめられます (デバイスには触れません)。
-リクエストとレスポンスの形は Swagger UI (`http://127.0.0.1:8000/docs`) で確認できます。
+| URL                                | 内容                                                    |
+| ---------------------------------- | ------------------------------------------------------- |
+| `http://127.0.0.1:8000/api/health` | 応答の `host` で接続先を確かめる (デバイスには触れない) |
+| `http://127.0.0.1:8000/docs`       | Swagger UI。リクエストとレスポンスの形を確かめ、試せる  |
 
 ### 設定
 
@@ -63,13 +75,24 @@ mise run dev
 mise run run-image
 ```
 
-`/api/discover` のブロードキャストは Docker の既定の bridge ネットワークから LAN に届かないので、使うならホスト上で直接起動するか、`--network host` (Linux の Docker Engine) で起動してください。
+Docker で動かすときの注意です。`mise run run-image` は表の 1・2 行目を設定済みです。
 
-docker compose 等で mise を使わずに起動するときは、次に注意してください。
+| 項目                                                           | 理由・方法                                                                                                                                                                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POPIN_ALADDIN_HOST` を環境変数で渡す                          | イメージに接続先は含まれない                                                                                                                                                                                              |
+| bridge ネットワークでは `CONTROL_REPLY_UDP_PORT` を UDP で公開 | `/api/capture` と `/api/remote/device` の応答はデバイスから UDP で届く (例: `-p 16751:16751/udp`)                                                                                                                         |
+| healthcheck は exec 形式で書く                                 | イメージは shell の無い distroless (下の例)                                                                                                                                                                               |
+| `/api/discover` を使うなら `--network host`                    | ブロードキャストは Docker の既定の bridge ネットワークから LAN に届かない (`--network host` は Linux の Docker Engine で使える)。ホストで直接起動してもよい。host ネットワークではポートの公開 (`-p`・`ports`) は要らない |
 
-- `POPIN_ALADDIN_HOST` を環境変数で渡す。
-- `/api/capture` と `/api/remote/device` の応答はデバイスから UDP で届くので、`CONTROL_REPLY_UDP_PORT` を UDP で公開する (例: `-p 16751:16751/udp`)。
-- イメージは shell の無い distroless なので、healthcheck は exec 形式で書く (例: `["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]`)。
+```yaml
+healthcheck:
+  test: [
+    "CMD",
+    "python",
+    "-c",
+    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+  ]
+```
 
 ## API
 
@@ -120,25 +143,27 @@ curl -X POST http://127.0.0.1:8000/api/deeplink -H 'Content-Type: application/js
 
 ### エラー
 
-| Status | 意味                                                                                                                                                                        |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | `confirm: true` が要る操作に付いていない                                                                                                                                    |
-| 422    | リクエストが不正 (未知のボタン名・範囲外の音量等)。`detail` には送った値を含めない                                                                                          |
-| 502    | デバイスがエラーや想定外の応答を返した。SOAP fault なら body に `fault_code` (SOAP faultcode) と `upnp_error_code` (UPnPError errorCode) を含む                             |
-| 504    | デバイスとの通信が失敗した (接続できない・途中で切れた・タイムアウトした)、または UDP のコマンド (`/api/capture`・`/api/remote/device`) の応答が `TIMEOUT` 秒以内に届かない |
+| Status | 意味                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | `confirm: true` が要る操作に付いていない                                                                                                         |
+| 422    | リクエストが不正 (未知のボタン名・範囲外の音量等)。`detail` には送った値を含めない                                                               |
+| 502    | デバイスがエラーや想定外の応答を返した。SOAP fault なら body に `fault_code` (SOAP faultcode) と `upnp_error_code` (UPnPError errorCode) を含む  |
+| 504    | デバイスに接続できない・通信が途中で切れた・タイムアウトした。`/api/capture`・`/api/remote/device` では、UDP の応答が `TIMEOUT` 秒以内に届かない |
 
 ## 制約
 
 - 制御の多くは公式アプリの解析で復元した非公開のプロトコルによるもので、一部は実機で動作を確かめていません ([プロトコルの詳細](docs/protocol.md))。
   ファームウェアの更新で動かなくなることがあります。
 - UDP で送るだけの操作 (`/api/key`・`/api/memory/free`・`/api/power/off`) は、デバイスが応答しなくても 200 を返します。
-- デバイスへの操作は 1 つずつ順に実行します (複数の呼び出しから成る操作やキーの押下と離上の順を崩さないため)。
-  この直列化はプロセスの中でだけ効くので、uvicorn は 1 プロセス (`--workers 1`) で動かしてください。
+- デバイスへの操作は 1 つずつ順に実行します。この直列化はプロセスの中でだけ効くので、uvicorn は 1 プロセス (`--workers 1`) で動かしてください。
 - デバイスの UPnP の情報は起動中キャッシュします。デバイスを入れ替えたらサーバーを再起動してください。
 
 ## 開発
 
-開発のツール・検査・CI・リポジトリの設定は [docs/development.md](docs/development.md) にあります。
+| 文書                                       | 内容                                             |
+| ------------------------------------------ | ------------------------------------------------ |
+| [docs/development.md](docs/development.md) | コードの構成・テスト・検査・CI・リポジトリの設定 |
+| [docs/protocol.md](docs/protocol.md)       | デバイスの各ポートのプロトコルと、動作の確認状況 |
 
 ## 免責 / Disclaimer
 

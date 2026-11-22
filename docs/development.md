@@ -1,27 +1,25 @@
 # 開発
 
-セットアップと起動は [README](../README.md) を、lint・test などのタスクは README の「タスク」を参照してください。
+セットアップと起動は [README](../README.md)、`mise run` のタスクは README の「タスク」にあります。
 
 ## 構成
-
-`src/` レイアウトの単一パッケージです。
 
 ```
 src/popin_aladdin_api/
   settings.py        環境変数の設定 (pydantic-settings)
   main.py            FastAPI アプリ、lifespan、device 層の例外 → HTTP status
-  device/            FastAPI 非依存のデバイス制御層 (async)
-    renderer.py      UPnP/DLNA MediaRenderer クライアント (httpx)
-    remote.py        独自プロトコル クライアント (asyncio TCP / UDP、発見のブロードキャスト)
-    upnp.py          SOAP / device description / DIDL-Lite の純粋関数
-    models.py        列挙型 (PlayMode / LightButton / ProjectorKey) と応答モデル
-    errors.py        AladdinError / AladdinConnectionError / AladdinSoapError
   api/               FastAPI ルーター
     renderer.py      再生・音量・キャスト・SOAP パススルー
     remote.py        ライト・キー・文字入力・音声・deeplink・デバイス情報・スクリーンショット・電源・発見
     system.py        /health
     schemas.py       リクエストモデル
     deps.py          依存性注入と直列化ロック
+  device/            デバイス制御層 (FastAPI に依存しない async のクライアント)
+    renderer.py      UPnP/DLNA MediaRenderer クライアント (httpx)
+    remote.py        独自プロトコルのクライアント (asyncio の TCP / UDP、発見のブロードキャスト)
+    upnp.py          SOAP / device description / DIDL-Lite の純粋関数
+    models.py        列挙型 (PlayMode / LightButton / ProjectorKey) と応答モデル
+    errors.py        AladdinError / AladdinConnectionError / AladdinSoapError
 tests/               機能ごとの e2e テストと、fake のデバイス・API サーバーの起動 (harness.py)
 ```
 
@@ -38,139 +36,204 @@ flowchart LR
         main -.-> settings[settings.py]
     end
 
-    renderer -- "HTTP :1481 (SOAP)" --> dev[(popIn Aladdin)]
-    remote -- "TCP :30913 / UDP :16735 :16750 (:16751 で応答受信) / UDP :8100 broadcast" --> dev
+    renderer -- "HTTP 1481 (SOAP)" --> dev[(popIn Aladdin)]
+    remote -- "TCP 30913 / UDP 16735・16750・8100" --> dev
+    dev -. "UDP 16751 (コマンドの応答)" .-> remote
 ```
 
-デバイスに触るリクエストはプロセス内の 1 つの `asyncio.Lock` で直列化します。
-複数 SOAP 呼び出しから成る操作 (cast, status) の途中に別リクエストが割り込まず、D-pad の押下 → 離上列も崩れません。
-同じ理由で uvicorn は単一プロセス (`--workers 1`) で運用します。
+各ポートの形式は [プロトコルの詳細](protocol.md) にあります。
 
-各プロトコルの形式は [プロトコルの詳細](protocol.md) にあります。
+### 層の依存
+
+`pyproject.toml` の `[tool.importlinter]` が、次の向きの依存だけを許します (`mise run lint` で検査)。
+
+| 範囲                | 上の層 → 下の層                                          |
+| ------------------- | -------------------------------------------------------- |
+| `popin_aladdin_api` | `main` → `api` → `settings` → `device`                   |
+| `api`               | `remote` \| `renderer` \| `system` → `deps` \| `schemas` |
+| `device`            | `remote` \| `renderer` → `upnp` → `errors` \| `models`   |
+
+- 上の層は途中の層を飛ばして import でき、`|` で並べた同じ層のモジュールどうしは import できません。
+- `popin_aladdin_api`・`api`・`device` の直下にモジュールを足したら、契約の `layers` にも足します (`exhaustive = true` なので、足さないと失敗します)。
+- 外部パッケージを直接 import できるのは、fastapi が `main`・`api`、httpx が `device.renderer`、pydantic_settings が `settings` だけです。
+
+### 直列化
+
+デバイスに触るリクエストは、プロセス内の 1 つの `asyncio.Lock` で 1 つずつ実行します。
+複数の SOAP 呼び出しから成る操作 (cast・status) に別のリクエストが割り込まず、方向キーの押下 → 離上の列も崩れません。
+ロックはプロセスの中でだけ効くので、uvicorn は 1 プロセス (`--workers 1`) で動かします。
 
 ## テスト
 
-テストは利用者と同じく HTTP で API を呼ぶ e2e テストです。
-xdist の worker ごとに、API サーバーを本番と同じ `uvicorn popin_aladdin_api.main:app` で subprocess として起動し、実機の代わりに `tests/harness.py` の fake のデバイスへつなぎます。
-fake は [プロトコルの詳細](protocol.md) の UPnP / TCP / UDP の各制御面を localhost の空きポートで受け付け、届いた操作を記録します。
-API サーバーには fake の接続先だけを環境変数で渡すので、`mise.toml` の `POPIN_ALADDIN_HOST` (実機) には接続しません。
-入力のどんな値でも成り立つべき契約 (文字列がそのままデバイスに届く、範囲外の値を拒否する等) は Hypothesis で入力を生成して確かめます。
-`/api/discover` のテストだけは、fake が待ち受ける空きポート宛てに 255.255.255.255 へのブロードキャストを送るので、その UDP のパケットは LAN にも出ます。
-coverage は API サーバーの subprocess も計測し、その計測が欠けると `mise run test` は失敗します。
+テストは、利用者と同じく HTTP で API を呼ぶ e2e テストです。実機には接続しません。
+
+```mermaid
+flowchart LR
+    subgraph worker [pytest の xdist worker ごと]
+        test[テスト] -- HTTP --> server[uvicorn<br/>popin_aladdin_api.main:app<br/>subprocess]
+        server -- "UPnP / TCP / UDP<br/>(127.0.0.1 の空きポート)" --> fake[fake のデバイス<br/>tests/harness.py]
+        server -- "発見のブロードキャスト<br/>(255.255.255.255。LAN にも出る)" --> fake
+        test -. 届いた操作を確かめる .-> fake
+    end
+```
+
+- API サーバーは本番と同じコマンドで起動し、fake の接続先だけを環境変数で渡します。
+- fake は [プロトコルの詳細](protocol.md) の各ポートを受け付け、届いた操作を記録します。
+- どんな入力でも成り立つべき契約 (文字列がそのままデバイスに届く、範囲外の値を拒否する等) は、Hypothesis で入力を生成して確かめます。
+- coverage は API サーバーの subprocess も計測します。その計測が欠けると `mise run test` は失敗します。
 
 ## Docker イメージ
 
-ランナーは shell やパッケージマネージャを持たない distroless (`gcr.io/distroless/cc-debian13:nonroot`) です。
-distroless には Python 3.14 のイメージが無いので、ビルダで uv が配布する Python を入れ、実行時に使わないファイル (tcl/tk・pip・ヘッダ等) を除いてからランナーへ写します。
-ランナーにはその Python と、依存とこのパッケージを入れた `.venv` だけを置きます。
+| 項目         | 内容                                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| ランナー     | `gcr.io/distroless/cc-debian13:nonroot` (shell とパッケージマネージャが無い)                                                                |
+| Python       | distroless に Python 3.14 のイメージが無いので、ビルダで uv が配布する Python を入れ、使わないファイル (tcl/tk・pip・ヘッダ等) を除いて写す |
+| 中身         | その Python と、依存とこのパッケージを入れた `.venv` だけ                                                                                   |
+| 実行ユーザー | UID 65532 (非 root)                                                                                                                         |
 
-- UID 65532 の非 root で動きます。root filesystem を read-only にし、capability をすべて外しても動くので、`mise run run-image` はその設定 (`--read-only --cap-drop ALL --security-opt no-new-privileges`) で起動します。
-  docker compose では `read_only: true`・`cap_drop: [ALL]`・`security_opt: [no-new-privileges:true]` が同じ設定です。
-- shell が無いので、`docker exec <container> sh` では入れず、shell を前提にしたコマンド (compose の healthcheck の `CMD-SHELL`、`command` の中のパイプや変数展開等) も動きません。
-  中を調べるときは `docker run --rm --entrypoint python popin-aladdin-api:latest -c '<code>'` で起動します。
+root filesystem を read-only にし、capability をすべて外しても動きます。`mise run run-image` はその設定で起動します。
+
+| `docker run`                       | docker compose                           |
+| ---------------------------------- | ---------------------------------------- |
+| `--read-only`                      | `read_only: true`                        |
+| `--cap-drop ALL`                   | `cap_drop: [ALL]`                        |
+| `--security-opt no-new-privileges` | `security_opt: [no-new-privileges:true]` |
+
+shell が無いので、`docker exec <container> sh` で入れず、shell を前提にしたコマンド (compose の healthcheck の `CMD-SHELL`、`command` の中のパイプや変数展開等) も動きません。
+中を調べるときは `docker run --rm --entrypoint python popin-aladdin-api:latest -c '<code>'` で起動します。
 
 ## ツールと依存
 
-ツール (uv / prek / dprint / jactionlint / shellcheck / hadolint / typos / zizmor / gitleaks) は `mise.toml` の `[tools]` で exact version に pin し、`mise.lock` でプラットフォームごとの URL / checksum を固定します。
-CI (`ci.yaml`) もローカルも同じ `mise.lock` からツールを解決するため、同じ検証をローカルで再現できます。
-`[tools]` を手で変更したら `mise lock` を実行して `mise.lock` を追従させ、両方を同じ commit に含めてください (古いままだと CI の `mise install --locked` が失敗します)。
+| 対象                                                                                          | 固定する場所                                                                                  | 変えたとき                                                                                                         |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| ツール (uv / prek / dprint / jactionlint / shellcheck / hadolint / typos / zizmor / gitleaks) | `mise.toml` の `[tools]` (exact version)、`mise.lock` (プラットフォームごとの URL / checksum) | `mise lock` で `mise.lock` を追従させ、同じ commit に含める (古いと CI の `mise install --locked` が失敗する)      |
+| Python 本体                                                                                   | `.python-version` (3.14 の minor)                                                             | uv が手元・CI・Docker の build で同じ minor を取得する。上げる前に依存とツールの対応を確かめる (Renovate の対象外) |
+| Python の依存                                                                                 | `pyproject.toml`、`uv.lock`                                                                   | `mise exec -- uv lock` で `uv.lock` を更新し、同じ commit に含める                                                 |
 
-Python 本体は mise ではなく uv が `.python-version` (3.14) に従って取得します。
-uv は手元・CI・Docker イメージの build のどれでもこのファイルから Python の minor version を選びます。
+CI もローカルも同じ `mise.lock` からツールを解決するので、CI の検査をローカルで再現できます。
 
-Python の依存は、`pyproject.toml` の `[[tool.uv.index]]` で宣言した `https://pypi.flatt.tech/simple/` から取得します。
-この宣言は `UV_INDEX_URL` やユーザー設定の `index-url` より優先されます。
-ただし `UV_DEFAULT_INDEX` はこの宣言より優先され、`UV_INDEX` やユーザー設定の (`explicit` でない) 追加の index はこの index より先に参照されるので、どれかを設定して `uv lock` を実行すると `uv.lock` の取得元が変わりえます。
+Python の依存は、`pyproject.toml` の `[[tool.uv.index]]` で既定にした `https://pypi.flatt.tech/simple/` から取得します。
+`UV_INDEX_URL` やユーザー設定の `index-url` はこの宣言に負けますが、次を設定して `uv lock` を実行すると `uv.lock` の取得元が変わりえます。
 
-`.gitignore` はホワイトリスト方式 (`*` で全て無視し、`!` で許可したものだけを追跡する) です。
-新しく追跡したいファイルを追加する場合は、対応する `!` の行を追記してください。
+- `UV_DEFAULT_INDEX` (この宣言より優先される)
+- `UV_INDEX` やユーザー設定の、`explicit` でない追加の index (既定の index より先に参照される)
+
+`.gitignore` はホワイトリスト方式 (`*` ですべて無視し、`!` の行で許可したものだけを追跡する) です。新しいファイルを追跡するときは `!` の行を足します。
 
 ## pre-commit hooks
 
-`mise install` の `postinstall` hook で `prek install` が実行され、`.git/hooks/pre-commit`・`.git/hooks/pre-push`・`.git/hooks/commit-msg` が登録されます。
-`.pre-commit-config.yaml` の hook 構成が変わったあとの既存 clone では `mise exec -- prek install` を再実行してください。
-以前 pre-commit (Python package。旧 `make precommit-install`) で hook を登録した clone では、`prek install` が旧 hook を `.git/hooks/pre-commit.legacy` として残して呼び続け、`pre-commit` が `.venv` から消えた後は commit が失敗します。
-`mise exec -- prek install --force` で置き換えてください (prek 以外の hook を自分で置いている場合は `.git/hooks/*.legacy` の中身を確認してから)。
+`mise install` が `prek install` を実行し、`pre-commit`・`pre-push`・`commit-msg` の git hook を登録します。
+`.pre-commit-config.yaml` を変えたら `mise exec -- prek install` で登録し直します。
+commit が `.git/hooks/pre-commit.legacy` から失敗するときは、以前に別の仕組みで登録した hook が残っています。中身を確かめてから `mise exec -- prek install --force` で置き換えます。
 
-- Python の hook は、commit・push する変更に Python のファイル (`.py`・`.pyi`)・`pyproject.toml`・`uv.lock`・`.python-version`・`mise.toml`・`mise.lock` が含まれるときに走ります (整形の hook は Python のファイルだけを対象にします)。
-  - git commit 時: `ruff-isort` / `ruff-format` hook が commit するファイルの import を並べ替えて整形し、`lint` hook が `mise run lint` を実行します。
-  - git push 時: `mise run test` を実行する `test` hook が走ります。
-  - ファイルを書き換える hook (整形・README のタスク一覧の同期・空白の修正) は git commit 時だけに走り、git push 時は検査だけを行います。
-    push 時の hook は push する commit ではなく作業ツリーに対して走るので、次の作業のファイルを書き換えないためです。
-  - `lint` と `test` は作業ツリー全体を検査する手元の事前検査で、push した変更の最終的な判定は PR の CI が行います。
-- main を checkout しているときの `git commit` は `no-commit-to-branch` hook が止めます (main への変更は PR 必須で、GitHub の ruleset が強制します)。
-  この hook は git commit 時だけに走り、検証用の `mise run pre-commit` では実行しません (main を checkout したままでも検証できるようにするため)。
-- [ruff](https://docs.astral.sh/ruff/) (format + lint) と [ty](https://docs.astral.sh/ty/) (型チェック) は strict に設定しています。
-  例えば、2 引数目以降は keyword-only にし、相対 import と `from __future__ import annotations` を禁じ、基底のメソッドを上書きするメソッドに `@override` を付けさせます。
-  抑制は規則名付きの `# noqa: <code>`・`# ty: ignore[<rule>]` で書きます。`# type: ignore` は無効にしており、規則名の無い `# ty: ignore` もエラーにします。
-  ruff / ty / import-linter は `uv run --locked` で `uv.lock` のバージョンを使うので、`uv.lock` が `pyproject.toml` に追従していないと hook (と CI) がここで失敗します。
-- [import-linter](https://import-linter.readthedocs.io/): `pyproject.toml` の `[tool.importlinter]` の契約で、`popin_aladdin_api` の中の層の向き (`main` → `api` → `settings` → `device`)、`api`・`device` の中の層の向き、fastapi・httpx・pydantic_settings を直接 import できるモジュールを検査します (`mise run lint` の中で実行)。
-  上の層は途中の層を飛ばして下の層を import でき、契約の `layers` で `|` で並べた同じ層のモジュールどうしは import できません。
-  `popin_aladdin_api`・`api`・`device` の直下にモジュールを足したら、`exhaustive = true` の契約の `layers` にも足します。
-- [dprint](https://dprint.dev/): json / markdown / toml / yaml / Dockerfile のフォーマッタ。
-  plugin の WASM URL は `dprint.json` に `url@sha256` の checksum 付きで pin します。`uv.lock` / `mise.lock` は対象外です。
-- [jactionlint](https://jactionlint.jdx.dev/) (actionlint の fork): workflow の静的検査。`run:` スクリプトの検査に [shellcheck](https://github.com/koalaman/shellcheck) を使います。
-  actionlint と同じ範囲の `correctness` profile で、`warn` の所見も失敗にします。セキュリティの監査は zizmor が行います。
-- [hadolint](https://github.com/hadolint/hadolint): Dockerfile の静的検査。
-  `.hadolint.yaml` で style を含む全 severity を失敗にし、ベースイメージの registry を docker.io / ghcr.io / gcr.io に限り、OCI label (`org.opencontainers.image.source` / `licenses`) を必須にしています。
-  `label-schema` に無い label は拒否するので、label を足すときはそこにも足します。
-  Dockerfile 内の `# hadolint ignore=` は無効にしているので、除外が要るときは `.hadolint.yaml` の `ignored` に書きます。
-- [typos](https://github.com/crate-ci/typos): 英単語の typo 検査。`typos.toml` で綴りを米国英語に統一しています。
-  誤検知は `typos.toml` の `extend-identifiers` (識別子) か `extend-words` (単語) に足して除外します。
-- [zizmor](https://docs.zizmor.sh/): workflow と `.pre-commit-config.yaml` のセキュリティ監査。
-  `--persona auditor` で false positive を含む全 finding を、`--strict-collection` で解析できない入力を失敗にします。
-  GitHub API を使う online audit (impostor-commit 等) は token があるときだけ走るため、CI の `prek` job は hook の代わりに `ZIZMOR_GITHUB_TOKEN` を渡した専用 step で実行します。
-  ローカルで同じ範囲を監査するには `ZIZMOR_GITHUB_TOKEN=$(gh auth token) mise exec -- zizmor --persona auditor --strict-collection .` を実行します。
-- [gitleaks](https://github.com/gitleaks/gitleaks): シークレットスキャン。pre-commit hook が staged 差分を、CI の `gitleaks` job がコミット履歴全体を対象にします。
-- [commitlint](https://commitlint.js.org/): commit message を [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`) で検査する commit-msg hook。
-  ルールは `commitlint.config.mjs`。prek が node と依存を隔離環境へ自前で用意します。
+| hook                                                        | commit 時  | push 時 | 対象                                       | 内容                                                     |
+| ----------------------------------------------------------- | :--------: | :-----: | ------------------------------------------ | -------------------------------------------------------- |
+| trailing-whitespace / end-of-file-fixer / mixed-line-ending |    修正    |    -    | 全ファイル                                 | 空白と改行を直す                                         |
+| check-yaml / check-json / check-toml                        |     ✓      |    ✓    | YAML / JSON / TOML                         | 構文を検査する                                           |
+| check-added-large-files                                     |     ✓      |    ✓    | 追加するファイル                           | 大きなファイルの追加を止める                             |
+| check-merge-conflict                                        |     ✓      |    ✓    | merge・rebase 中のファイル                 | conflict の印を検査する                                  |
+| no-commit-to-branch                                         |     ✓      |    -    | -                                          | main を checkout しているときの commit を止める          |
+| mise-task-docs                                              |    修正    |    -    | `mise.toml`・`README.md`                   | README のタスク一覧を同期する (`mise run docs`)          |
+| dprint-fmt                                                  |    修正    |    -    | json / yaml / markdown / toml / Dockerfile | 整形する                                                 |
+| ruff-isort / ruff-format                                    |    修正    |    -    | Python のファイル                          | commit するファイルの import を並べ替えて整形する        |
+| lint                                                        |     ✓      |    -    | Python のファイル・Python の設定 (\*)      | 作業ツリー全体に `mise run lint` を実行する              |
+| test                                                        |     -      |    ✓    | Python のファイル・Python の設定 (\*)      | `mise run test` を実行する                               |
+| jactionlint                                                 |     ✓      |    ✓    | workflow                                   | workflow の静的検査                                      |
+| zizmor                                                      |     ✓      |    ✓    | `.github/`・`.pre-commit-config.yaml`      | workflow と hook の設定のセキュリティ監査                |
+| hadolint                                                    |     ✓      |    ✓    | Dockerfile                                 | Dockerfile の静的検査                                    |
+| typos                                                       |     ✓      |    ✓    | 全ファイル                                 | 英単語の typo を検査する                                 |
+| gitleaks                                                    |     ✓      |    -    | staged の差分                              | secret を検出する                                        |
+| commitlint                                                  | commit-msg |    -    | commit message                             | Conventional Commits (`type(scope): subject`) か検査する |
+
+(\*) `.py`・`.pyi`・`pyproject.toml`・`uv.lock`・`.python-version`・`mise.toml`・`mise.lock` の変更か削除。
+
+- ファイルを書き換える hook (表の「修正」) は commit 時だけに走ります。push 時の hook は push する commit ではなく作業ツリーを見るので、次の作業のファイルを書き換えないためです。
+- `lint` と `test` は手元の事前検査で、push した変更の最終的な判定は PR の CI が行います。
+- `mise run pre-commit` は検証用なので、main を checkout したままでも使えるよう `no-commit-to-branch` を除きます。
+
+### 各ツールの設定
+
+| ツール                                                                  | 設定                             | 要点                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ruff](https://docs.astral.sh/ruff/) / [ty](https://docs.astral.sh/ty/) | `pyproject.toml`                 | strict。2 引数目以降は keyword-only、相対 import と `from __future__ import annotations` の禁止、上書きするメソッドへの `@override` の強制。`uv.lock` の版を `uv run --locked` で使うので、`uv.lock` が `pyproject.toml` に追従していないと失敗する |
+| [import-linter](https://import-linter.readthedocs.io/)                  | `pyproject.toml`                 | 「層の依存」を検査する                                                                                                                                                                                                                              |
+| [dprint](https://dprint.dev/)                                           | `dprint.json`                    | plugin の WASM は `url@sha256` で checksum ごと pin する。`uv.lock`・`mise.lock` は対象外                                                                                                                                                           |
+| [jactionlint](https://jactionlint.jdx.dev/) (actionlint の fork)        | `.pre-commit-config.yaml` の引数 | actionlint と同じ範囲の `correctness` profile。`warn` も失敗にし、`run:` を [shellcheck](https://github.com/koalaman/shellcheck) で検査する                                                                                                         |
+| [hadolint](https://github.com/hadolint/hadolint)                        | `.hadolint.yaml`                 | style を含む全 severity を失敗にする。ベースイメージの registry を docker.io / ghcr.io / gcr.io に限り、OCI label (`org.opencontainers.image.source` / `licenses`) を必須にする                                                                     |
+| [typos](https://github.com/crate-ci/typos)                              | `typos.toml`                     | 綴りを米国英語に揃える                                                                                                                                                                                                                              |
+| [zizmor](https://docs.zizmor.sh/)                                       | `.pre-commit-config.yaml` の引数 | `--persona auditor` で false positive を含む全 finding を、`--strict-collection` で解析できない入力を失敗にする                                                                                                                                     |
+| [gitleaks](https://github.com/gitleaks/gitleaks)                        | -                                | hook は staged の差分、CI の `gitleaks` job はコミット履歴全体を検査する                                                                                                                                                                            |
+| [commitlint](https://commitlint.js.org/)                                | `commitlint.config.mjs`          | prek が node と依存を隔離した環境に用意する                                                                                                                                                                                                         |
+
+lint の指摘を抑制するときの書き方です。設定を緩めず、誤検知と外部の仕様のために直せない箇所だけを、理由のコメントを添えて除外します。
+
+| ツール   | 書き方                                                                | 無効な書き方                                  |
+| -------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| ruff     | 該当行の `# noqa: <code>`                                             | -                                             |
+| ty       | 該当行の `# ty: ignore[<rule>]`                                       | `# type: ignore`、規則名の無い `# ty: ignore` |
+| hadolint | `.hadolint.yaml` の `ignored`。label は `label-schema` に足す         | Dockerfile の中の `# hadolint ignore=`        |
+| typos    | `typos.toml` の `extend-identifiers` (識別子) / `extend-words` (単語) | -                                             |
+| zizmor   | 該当行の `# zizmor: ignore[<audit 名>]`                               | -                                             |
+
+zizmor の online audit (impostor-commit 等) は GitHub の token があるときだけ走ります。ローカルで CI と同じ範囲を監査するには次を実行します。
+
+```sh
+ZIZMOR_GITHUB_TOKEN=$(gh auth token) mise exec -- zizmor --persona auditor --strict-collection .
+```
 
 ## CI
 
-`.github/workflows/ci.yaml` は pull request 時に以下の job を並列実行します。job の `name` がそのまま required status check の名前になります。
+`.github/workflows/ci.yaml` は、pull request で次の job を並列に実行します。main への push では実行しません (main は PR 必須で、PR の CI を通ったものだけが入ります)。
+job の `name` がそのまま required status check の名前になります。
 
-- `prek`: `mise.lock` 通りのツールで、`.pre-commit-config.yaml` の pre-commit stage の hook を全追跡ファイルに対して実行する。
-  `lint` hook は `uv run --locked` で動くため、`uv.lock` と `pyproject.toml` の不整合もここで失敗する。
-  zizmor は hook の代わりに online audit を含めて token 付きで実行し、gitleaks の hook (staged の差分だけを見る) は `gitleaks` job に任せて実行しない。
-- `gitleaks`: コミット履歴全体を対象にシークレットスキャンを行う。
-- `verify`: `mise run test` でテストを実行する。
-- `image (amd64)` / `image (arm64)`: 各 arch の runner で `mise run check-image` を実行する。
+| job                               | 内容                                                                                                                                                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prek`                            | 全追跡ファイルに pre-commit stage の hook を実行する (`no-commit-to-branch` を除く)。`mise.lock` の不整合は mise の導入で、`uv.lock` の不整合は `lint` hook で失敗する。zizmor は online audit 込みで token を渡す別の step で実行し、gitleaks は `gitleaks` job に任せる |
+| `gitleaks`                        | コミット履歴全体の secret を検出する                                                                                                                                                                                                                                      |
+| `verify`                          | `mise run test`                                                                                                                                                                                                                                                           |
+| `image (amd64)` / `image (arm64)` | 各 arch の runner で `mise run check-image`                                                                                                                                                                                                                               |
 
-main への push では実行しません (main は PR 必須で、変更は PR の CI で検証してから merge します)。
-workflow の外部依存 (`uses:`) は commit SHA で固定し、バージョンをコメントで併記します。
+workflow の `uses:` は commit SHA で固定し、バージョンをコメントで併記します。
 
 ## 依存関係の更新 (Renovate)
 
-`renovate.json` で以下を [Renovate](https://docs.renovatebot.com/) に任せます。Renovate GitHub App をこのリポジトリに対して有効化しておく必要があります。
+`renovate.json` の設定で [Renovate](https://docs.renovatebot.com/) が更新の PR を作ります (Renovate GitHub App をこのリポジトリで有効にしておく)。
+PR は毎週月曜 9 時前 (Asia/Tokyo) の時間帯に作られます (脆弱性の alert による更新は、曜日と 7 日の猶予を待たずに作られます)。
 
-- `pyproject.toml` の依存と `uv.lock` (範囲内の更新は `lockFileMaintenance` の週次再解決で追従する)。
-- `mise.toml` のツールのバージョン bump と、それに伴う `mise.lock` の更新 (同じ PR で行われる)。
-- `.pre-commit-config.yaml` の hook `rev` と、`language: node` の hook の `additional_dependencies`。
-- workflow の `uses:` の commit SHA と、`dprint.json` の plugin URL / checksum。
-- `Dockerfile` のベースイメージ。uv は tag (uv の版) と digest、distroless は `nonroot` tag の digest を更新します。
-  - イメージの Python の patch version (と Python に同梱の OpenSSL 等) は uv の版で決まり、新しい Python の配布物を収録した uv の版に上がったときに更新されます (uv の更新がいつも Python を変えるわけではありません)。
-  - Renovate の docker datasource が公開日時を取得できるのは Docker Hub だけで、GHCR・GCR のこの 2 つは `minimumReleaseAge` を判定できません。
-    そのため、公開日時が無い更新も PR にし (`minimumReleaseAgeBehaviour: timestamp-optional`)、猶予期間の代わりに自動マージせず人手で merge します。
-    major 以外の更新 (uv の版と digest) は、他の依存とは別の 1 つの PR にまとめます。
+| 対象                                                                                                                                                                                                        | PR                          | merge                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pyproject.toml` の依存と `uv.lock`、`mise.toml` のツールと `mise.lock`、`.pre-commit-config.yaml` の hook の `rev` と `additional_dependencies`、workflow の `uses:`、`dprint.json` の plugin (major 以外) | 1 つにまとめる              | 公開から 7 日経過後、CI が通れば Renovate が自動で merge する。pin・digest の更新が入った PR は人手で merge する |
+| `uv.lock` の再解決 (`lockFileMaintenance`、週次)                                                                                                                                                            | 単独                        | CI が通れば自動で merge する                                                                                     |
+| `Dockerfile` のベースイメージ (major 以外。uv の tag と digest、distroless の `nonroot` の digest)                                                                                                          | ほかとは別の 1 つにまとめる | 人手で merge する                                                                                                |
+| major の更新                                                                                                                                                                                                | 個別                        | 人手でレビューして merge する                                                                                    |
 
-次は Renovate の対象外で、手で書き換えます。
+- ベースイメージは GHCR・GCR にあり、Renovate が公開日時を取得できないので、7 日の猶予を置けません。公開日時が無くても PR を作り (`minimumReleaseAgeBehaviour: timestamp-optional`)、自動では merge しません。
+- イメージの Python の patch version (と同梱の OpenSSL 等) は uv の版で決まり、uv の更新で変わることがあります。
+- `uv.lock` の再解決には公開日時が無いので、7 日の猶予は `pyproject.toml` の `exclude-newer` で守ります。
 
-- Python の minor version (`.python-version`)。依存とツールが新しい minor に対応したのを確かめてから上げます (`renovate.json` で pyenv manager を無効にしています)。
-- distroless の Debian の世代 (`Dockerfile` の `cc-debian13` のイメージ名)。
+次は Renovate の対象外で、手で上げます。
 
-更新 PR は毎週月曜 9 時前 (Asia/Tokyo) にまとめて作られます。major 以外の更新は、ベースイメージを除いて 1 つの PR に集約します。
-このうち minor / patch は `minimumReleaseAge` (7 日) 経過後、CI green を条件に Renovate 自身が自動マージします (`platformAutomerge: false`)。
-major は個別 PR で人手レビューします。
+- Python の minor version (`.python-version`): 依存とツールが新しい minor に対応したのを確かめてから上げる (`renovate.json` で pyenv manager を無効にしている)。
+- distroless の Debian の世代 (`Dockerfile` の `cc-debian13`)。
 
 ## GitHub リポジトリ設定
 
-ファイルとして管理できないリポジトリ設定です。public リポジトリなので ruleset と secret scanning が使えます。
-required checks は `ci.yaml` の job の `name` (`prek` / `gitleaks` / `verify` / `image (amd64)` / `image (arm64)`) に合わせます。
+ファイルで管理できないリポジトリの設定です (ruleset と secret scanning は public リポジトリなので使えます)。required checks は「CI」の job の `name` に合わせます。
+
+| 設定            | 内容                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| merge           | squash のみ (タイトルは `COMMIT_OR_PR_TITLE`)。merge 後にブランチを自動で削除する。wiki は無効 |
+| ruleset (main)  | PR 必須・CI 必須・squash merge のみ・force push と削除の禁止・linear history                   |
+| secret scanning | push protection と non-provider patterns を有効にする                                          |
+| Actions         | GitHub 公式・verified creator と `jdx/mise-action` だけを許可し、SHA pin を必須にする          |
+| Dependabot      | 脆弱性の alert だけを有効にする (更新の PR は Renovate が作るので security updates は使わない) |
+
+次のコマンドで設定します。
 
 ```sh
 REPO=msageha/popin-aladdin-api
 
-# merge 方式: squash のみ / squash タイトルは COMMIT_OR_PR_TITLE / merge 後にブランチ自動削除 / wiki off
+# merge
 gh api -X PATCH "repos/$REPO" --input - <<'JSON'
 {
   "allow_merge_commit": false,
@@ -183,7 +246,7 @@ gh api -X PATCH "repos/$REPO" --input - <<'JSON'
 }
 JSON
 
-# main を PR 必須・CI green 必須・squash merge 限定・force push / 削除禁止・linear history にする
+# ruleset (main)
 gh api -X POST "repos/$REPO/rulesets" --input - <<'JSON'
 {
   "name": "Protect main",
@@ -218,7 +281,7 @@ gh api -X POST "repos/$REPO/rulesets" --input - <<'JSON'
 }
 JSON
 
-# secret scanning: push protection に加え、non-provider patterns も有効化する
+# secret scanning
 gh api -X PATCH "repos/$REPO" --input - <<'JSON'
 {
   "security_and_analysis": {
@@ -229,7 +292,7 @@ gh api -X PATCH "repos/$REPO" --input - <<'JSON'
 }
 JSON
 
-# Actions: GitHub 公式 / verified creator と、workflow が使う action だけを許可し、SHA pin を必須にする
+# Actions
 gh api -X PUT "repos/$REPO/actions/permissions" --input - <<'JSON'
 {"enabled": true, "allowed_actions": "selected", "sha_pinning_required": true}
 JSON
@@ -237,6 +300,6 @@ gh api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JS
 {"github_owned_allowed": true, "verified_allowed": true, "patterns_allowed": ["jdx/mise-action@*"]}
 JSON
 
-# Dependabot alerts (脆弱性の通知のみ。更新 PR は Renovate が出すので security updates は有効化しない)
+# Dependabot alerts
 gh api -X PUT "repos/$REPO/vulnerability-alerts"
 ```

@@ -208,9 +208,8 @@ show_missing = true
 # Renovate の minimumReleaseAge と揃え、公開から 7 日未満の版を解決に使わない
 exclude-newer = "7 days"
 
-# UV_INDEX_URL やユーザー設定の index-url で uv.lock の registry が変わらないよう、それらより優先される既定の index を宣言する。
-# UV_DEFAULT_INDEX はこの宣言より優先され、UV_INDEX やユーザー設定の (explicit でない) 追加の index は既定の index より先に参照されるので、
-# どれかを設定して uv lock を実行すると uv.lock の取得元が変わりうる。
+# UV_INDEX_URL やユーザー設定の index-url で uv.lock の取得元が変わらないよう、それらより優先される既定の index を宣言する。
+# UV_DEFAULT_INDEX と、UV_INDEX・ユーザー設定の (explicit でない) 追加の index はこの宣言より先に効くので、設定した環境では変わりうる。
 [[tool.uv.index]]
 name = "flatt"
 url = "https://pypi.flatt.tech/simple/"

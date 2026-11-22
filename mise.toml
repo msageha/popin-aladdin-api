@@ -1,6 +1,5 @@
-# ツールのバージョンは Renovate (mise manager) が bump し、mise.lock も同じ PR で更新する。
-# latest 指定にしない。手で変更したときは `mise lock` を実行して mise.lock を追従させる。
-# Python 本体は mise ではなく uv が管理する (.python-version の 3.14 を取得する)。
+# 版は exact で pin し (latest にしない)、Renovate が mise.lock と同じ PR で bump する。手で変えたら `mise lock` を実行する。
+# Python 本体は mise ではなく uv が .python-version に従って取得する。
 [tools]
 uv = "0.13.7"
 prek = "0.5.10"
@@ -51,7 +50,6 @@ Python のコードを、ファイルを書き換えずに検査する (lint・�
 
 1 つの検査が失敗しても残りを実行し、最後に失敗を返す。
 """
-# 1 つ目の失敗で止めず、全部の検査の結果を出してから失敗を返す。
 run = """
 #!/usr/bin/env bash
 status=0
@@ -92,7 +90,6 @@ API はホストのすべてのネットワークインターフェースの 800
 """
 depends = ["build-image"]
 # -e NAME (値なし) は設定されている変数だけを渡すので、未設定の任意項目にはアプリ (settings.py) の既定値が使われる。
-# UDP JSON コマンドの応答はデバイスからホストの CONTROL_REPLY_UDP_PORT に届くので、container の同じポートへ公開する。
 run = "docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges -p 8000:8000 -p ${CONTROL_REPLY_UDP_PORT:-16751}:${CONTROL_REPLY_UDP_PORT:-16751}/udp -e POPIN_ALADDIN_HOST -e UPNP_PORT -e DESCRIPTION_PATH -e CONTROL_TCP_PORT -e CONTROL_UDP_PORT -e CONTROL_CMD_UDP_PORT -e CONTROL_REPLY_UDP_PORT -e DISCOVERY_UDP_PORT -e TIMEOUT popin-aladdin-api:latest"
 
 [tasks.check-image]
