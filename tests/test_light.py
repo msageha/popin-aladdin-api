@@ -26,7 +26,7 @@ def _light_frame(button: str) -> Frame:
 
 @pytest.mark.parametrize("button", list(_LIGHT_CODES))
 def test_button_sends_its_remote_control_action(*, stack: Stack, button: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/light", json={"button": button})
 
@@ -39,7 +39,7 @@ def test_button_sends_its_remote_control_action(*, stack: Stack, button: str) ->
 def test_repeat_presses_the_button_that_many_times(
     *, stack: Stack, repeat: int
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/light", json={"button": "brighter", "repeat": repeat}
@@ -64,7 +64,7 @@ def test_repeat_presses_the_button_that_many_times(
 def test_invalid_request_is_422_and_not_sent(
     *, stack: Stack, body: dict[str, object]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/light", json=body)
 

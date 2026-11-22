@@ -31,7 +31,7 @@ def _call(stack: Stack, *, method: str, path: str) -> httpx.Response:
 def test_soap_fault_is_502_with_fault_and_upnp_error_codes(
     *, stack: Stack, method: str, path: str, action: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_replies[action] = soap_fault(
         error_code="701", description="Transition not available"
     )
@@ -47,7 +47,7 @@ def test_soap_fault_is_502_with_fault_and_upnp_error_codes(
 def test_soap_fault_without_numeric_error_code_has_null_upnp_error_code(
     stack: Stack,
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_replies["GetTransportInfo"] = soap_fault(
         error_code="unknown", description="broken"
     )
@@ -71,7 +71,7 @@ def test_soap_fault_without_numeric_error_code_has_null_upnp_error_code(
 def test_reply_that_is_not_soap_is_502(
     *, stack: Stack, method: str, path: str, action: str, reply: HttpReply
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_replies[action] = reply
 
     assert _call(stack, method=method, path=path).status_code == 502
@@ -79,14 +79,14 @@ def test_reply_that_is_not_soap_is_502(
 
 @pytest.mark.parametrize(("method", "path"), [(m, p) for m, p, _ in _ENDPOINTS])
 def test_dropped_connection_is_504(*, stack: Stack, method: str, path: str) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.reachable = False
 
     assert _call(stack, method=method, path=path).status_code == 504
 
 
 def test_reply_slower_than_timeout_is_504(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_delays["GetTransportInfo"] = API_TIMEOUT + 1
 
     response = stack.api.get("/api/transport")
@@ -125,7 +125,7 @@ def test_device_is_reached_directly_even_with_proxy_settings(tmp_path: Path) -> 
     # 待ち受けて proxy 宛ての要求に応答しないようにする。
     with (
         socket.socket(socket.AF_INET, socket.SOCK_STREAM) as proxy,
-        FakeAladdin.serve() as device,
+        FakeAladdin() as device,
     ):
         proxy.bind(("127.0.0.1", 0))
         proxy_url = f"http://127.0.0.1:{proxy.getsockname()[1]}"
@@ -144,8 +144,9 @@ def test_description_at_configured_path_resolves_relative_control_urls(
 ) -> None:
     with serve_stack(
         tmp_path / "uvicorn.log",
-        description_path="/upnp/description.xml",
-        relative_control_urls=True,
+        device=FakeAladdin(
+            description_path="/upnp/description.xml", relative_control_urls=True
+        ),
     ) as stack:
         info = stack.api.get("/api/info")
         transport = stack.api.get("/api/transport")
@@ -163,7 +164,8 @@ def test_description_at_configured_path_resolves_relative_control_urls(
 
 def test_operation_on_service_the_device_lacks_is_502(tmp_path: Path) -> None:
     with serve_stack(
-        tmp_path / "uvicorn.log", services=["AVTransport", "ConnectionManager"]
+        tmp_path / "uvicorn.log",
+        device=FakeAladdin(services=["AVTransport", "ConnectionManager"]),
     ) as stack:
         volume = stack.api.get("/api/volume")
         transport = stack.api.get("/api/transport")
@@ -186,7 +188,7 @@ def test_operation_on_service_the_device_lacks_is_502(tmp_path: Path) -> None:
 def test_unreadable_device_description_is_502(
     *, tmp_path: Path, reply: HttpReply
 ) -> None:
-    with FakeAladdin.serve() as device:
+    with FakeAladdin() as device:
         device.description_reply = reply
         with run_api(device.api_env(), log_path=tmp_path / "uvicorn.log") as api:
             info = api.get("/api/info")

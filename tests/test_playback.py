@@ -13,9 +13,11 @@ from xml.etree import ElementTree as ET
 import pytest
 from hypothesis import example, given, strategies as st
 
-from tests.harness import Stack
+from tests.harness import SoapCall, Stack
 from tests.strategies import as_json, xml_text
 
+_AVT = "AVTransport"
+_RC = "RenderingControl"
 _INSTANCE = {"InstanceID": "0"}
 _MASTER = {"InstanceID": "0", "Channel": "Master"}
 _DIDL_NS = {
@@ -35,21 +37,19 @@ _URI_AFTER_SCHEME = (
 )
 
 
-def _calls(stack: Stack) -> list[tuple[str, dict[str, str]]]:
-    return [(call.action, call.args) for call in stack.device.soap_calls]
-
-
 @given(volume=st.integers(min_value=0, max_value=100))
 @example(volume=0)
 @example(volume=100)
 def test_set_volume_sends_master_volume(*, stack: Stack, volume: int) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/volume", json={"volume": volume})
 
     assert response.status_code == 200
     assert response.json() == {"volume": volume}
-    assert _calls(stack) == [("SetVolume", _MASTER | {"DesiredVolume": str(volume)})]
+    assert stack.device.soap_calls == [
+        SoapCall(_RC, "SetVolume", _MASTER | {"DesiredVolume": str(volume)})
+    ]
 
 
 @given(volume=st.integers(max_value=-1) | st.integers(min_value=101))
@@ -58,7 +58,7 @@ def test_set_volume_sends_master_volume(*, stack: Stack, volume: int) -> None:
 def test_set_volume_outside_0_to_100_is_422_and_not_sent(
     *, stack: Stack, volume: int
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/volume", json={"volume": volume})
 
@@ -70,13 +70,15 @@ def test_set_volume_outside_0_to_100_is_422_and_not_sent(
 
 @pytest.mark.parametrize(("mute", "desired"), [(True, "1"), (False, "0")])
 def test_set_mute_sends_upnp_boolean(*, stack: Stack, mute: bool, desired: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/mute", json={"mute": mute})
 
     assert response.status_code == 200
     assert response.json() == {"mute": mute}
-    assert _calls(stack) == [("SetMute", _MASTER | {"DesiredMute": desired})]
+    assert stack.device.soap_calls == [
+        SoapCall(_RC, "SetMute", _MASTER | {"DesiredMute": desired})
+    ]
 
 
 @pytest.mark.parametrize(
@@ -85,13 +87,15 @@ def test_set_mute_sends_upnp_boolean(*, stack: Stack, mute: bool, desired: str) 
 def test_play_sends_speed_defaulting_to_normal(
     *, stack: Stack, body: dict[str, str] | None, speed: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/play", json=body)
 
     assert response.status_code == 200
     assert response.json() == {"action": "play", "speed": speed}
-    assert _calls(stack) == [("Play", _INSTANCE | {"Speed": speed})]
+    assert stack.device.soap_calls == [
+        SoapCall(_AVT, "Play", _INSTANCE | {"Speed": speed})
+    ]
 
 
 @pytest.mark.parametrize(
@@ -106,13 +110,13 @@ def test_play_sends_speed_defaulting_to_normal(
 def test_transport_button_sends_its_action(
     *, stack: Stack, path: str, action: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(path)
 
     assert response.status_code == 200
     assert response.json() == {"action": path.removeprefix("/api/")}
-    assert _calls(stack) == [(action, _INSTANCE)]
+    assert stack.device.soap_calls == [SoapCall(_AVT, action, _INSTANCE)]
 
 
 @given(seconds=st.floats(min_value=0, allow_nan=False, allow_infinity=False))
@@ -123,14 +127,15 @@ def test_transport_button_sends_its_action(
 def test_seek_sends_rel_time_target_of_the_position(
     *, stack: Stack, seconds: float
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/seek", json={"seconds": seconds})
 
     assert response.status_code == 200
     assert response.json() == {"seconds": seconds}
-    [(action, args)] = _calls(stack)
-    assert action == "Seek"
+    [call] = stack.device.soap_calls
+    assert (call.service, call.action) == (_AVT, "Seek")
+    args = call.args
     assert args.keys() == {"InstanceID", "Unit", "Target"}
     assert (args["InstanceID"], args["Unit"]) == ("0", "REL_TIME")
     target = re.fullmatch(r"(\d+):([0-5]\d):([0-5]\d)", args["Target"])
@@ -157,9 +162,11 @@ def test_seek_sends_rel_time_target_of_the_position(
 def test_seek_to_negative_or_non_finite_position_is_422_and_not_sent(
     *, stack: Stack, body: bytes
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
-    response = stack.api.post_content("/api/seek", content=body)
+    response = stack.api.post(
+        "/api/seek", content=body, headers={"Content-Type": "application/json"}
+    )
 
     assert response.status_code == 422
     assert stack.device.soap_calls == []
@@ -167,18 +174,20 @@ def test_seek_to_negative_or_non_finite_position_is_422_and_not_sent(
 
 @pytest.mark.parametrize("mode", _PLAY_MODES)
 def test_play_mode_sends_new_play_mode(*, stack: Stack, mode: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/play-mode", json={"mode": mode})
 
     assert response.status_code == 200
     assert response.json() == {"play_mode": mode}
-    assert _calls(stack) == [("SetPlayMode", _INSTANCE | {"NewPlayMode": mode})]
+    assert stack.device.soap_calls == [
+        SoapCall(_AVT, "SetPlayMode", _INSTANCE | {"NewPlayMode": mode})
+    ]
 
 
 @pytest.mark.parametrize("mode", ["FAST", "normal", ""])
 def test_unknown_play_mode_is_422_and_not_sent(*, stack: Stack, mode: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/play-mode", json={"mode": mode})
 
@@ -203,15 +212,16 @@ def _didl_item(metadata: str) -> dict[str, Any]:
 
 
 def test_cast_loads_uri_with_generated_metadata_and_plays(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     uri = "http://192.0.2.50:8200/video/sample.mp4"
 
     response = stack.api.post("/api/cast", json={"uri": uri})
 
     assert response.status_code == 200
     assert response.json() == {"uri": uri, "autoplay": True}
-    [(load, load_args), play] = _calls(stack)
-    assert load == "SetAVTransportURI"
+    [load, play] = stack.device.soap_calls
+    assert (load.service, load.action) == (_AVT, "SetAVTransportURI")
+    load_args = load.args
     assert (load_args["InstanceID"], load_args["CurrentURI"]) == ("0", uri)
     assert _didl_item(load_args["CurrentURIMetaData"]) == {
         "title": "popin-aladdin-api",
@@ -219,11 +229,11 @@ def test_cast_loads_uri_with_generated_metadata_and_plays(stack: Stack) -> None:
         "res": uri,
         "valid_protocol_info": True,
     }
-    assert play == ("Play", _INSTANCE | {"Speed": "1"})
+    assert play == SoapCall(_AVT, "Play", _INSTANCE | {"Speed": "1"})
 
 
 def test_cast_without_autoplay_only_loads_uri(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     uri = "http://192.0.2.50/a.mp3"
 
     response = stack.api.post("/api/cast", json={"uri": uri, "autoplay": False})
@@ -234,7 +244,7 @@ def test_cast_without_autoplay_only_loads_uri(stack: Stack) -> None:
 
 
 def test_cast_sends_given_metadata_unchanged(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     metadata = '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="1"/></DIDL-Lite>'
 
     response = stack.api.post(
@@ -243,8 +253,8 @@ def test_cast_sends_given_metadata_unchanged(stack: Stack) -> None:
     )
 
     assert response.status_code == 200
-    [(_, load_args), _] = _calls(stack)
-    assert load_args["CurrentURIMetaData"] == metadata
+    [load, _] = stack.device.soap_calls
+    assert load.args["CurrentURIMetaData"] == metadata
 
 
 @given(
@@ -263,7 +273,7 @@ def test_cast_sends_given_metadata_unchanged(stack: Stack) -> None:
 def test_cast_metadata_carries_uri_title_and_class_unchanged(
     *, stack: Stack, scheme: str, rest: str, title: str, upnp_class: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     uri = f"{scheme}://{rest}"
 
     response = stack.api.post(
@@ -272,7 +282,9 @@ def test_cast_metadata_carries_uri_title_and_class_unchanged(
     )
 
     assert response.status_code == 200
-    [(_, load_args)] = _calls(stack)
+    [load] = stack.device.soap_calls
+    assert (load.service, load.action) == (_AVT, "SetAVTransportURI")
+    load_args = load.args
     assert load_args["CurrentURI"] == uri
     assert as_json(_didl_item(load_args["CurrentURIMetaData"])) == as_json(
         {"title": title, "class": upnp_class, "res": uri, "valid_protocol_info": True}
@@ -283,7 +295,7 @@ def test_cast_metadata_carries_uri_title_and_class_unchanged(
     "uri", ["sample.mp4", "/video/sample.mp4", "//host/a.mp4", "1http://h/a", ""]
 )
 def test_cast_of_relative_uri_is_422_and_not_sent(*, stack: Stack, uri: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/cast", json={"uri": uri})
 
@@ -292,7 +304,7 @@ def test_cast_of_relative_uri_is_422_and_not_sent(*, stack: Stack, uri: str) -> 
 
 
 def test_key_during_cast_waits_until_cast_finishes(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     # 読み込みの応答を保留し、その間に別の制御面 (UDP のキー入力) の操作を送る。
     loaded = threading.Event()
     stack.device.soap_gates["SetAVTransportURI"] = loaded
@@ -316,7 +328,7 @@ def test_key_during_cast_waits_until_cast_finishes(stack: Stack) -> None:
 
 
 def test_request_during_cast_waits_until_cast_finishes(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     # 読み込みの応答を遅らせ、読み込みが届いてから応答するまでの間に別の操作を送る。
     stack.device.soap_delays["SetAVTransportURI"] = 0.5
     with ThreadPoolExecutor(max_workers=1) as executor:

@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, NamedTuple, override
+from typing import Any, NamedTuple, Self, override
 from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
@@ -357,37 +357,20 @@ class FakeAladdin:
         self._commands: list[JsonValue] = []
         self._discovery_requests: list[DiscoveryRequest] = []
 
-    @classmethod
-    @contextmanager
-    def serve(
-        cls,
-        *,
-        description_path: str = "/",
-        relative_control_urls: bool = False,
-        services: Collection[str] = tuple(_SERVICE_TYPES),
-    ) -> Generator[FakeAladdin]:
-        device = cls(
-            description_path=description_path,
-            relative_control_urls=relative_control_urls,
-            services=services,
-        )
-        # shutdown() は serve_forever が次に poll するまで待つ。既定の 0.5 秒だと、5 つのサーバーの
-        # 停止だけで 2 秒近くかかる。
-        threads = [
+    def __enter__(self) -> Self:
+        for server in self._servers:
+            # shutdown() は serve_forever が次に poll するまで待つ。既定の 0.5 秒だと、5 つのサーバーの
+            # 停止だけで 2 秒近くかかる。
             threading.Thread(
                 target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True
-            )
-            for server in device._servers
-        ]
-        for thread in threads:
-            thread.start()
-        try:
-            yield device
-        finally:
-            for server in device._servers:
-                server.shutdown()
-                server.server_close()
-            device._loopback.close()
+            ).start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        for server in self._servers:
+            server.shutdown()
+            server.server_close()
+        self._loopback.close()
 
     def reset(self) -> None:
         """登録した応答と記録を初期状態に戻す。device description の内容は変えない。"""
@@ -818,43 +801,12 @@ def _port(server: socketserver.BaseServer) -> int:
     return server.server_address[1]
 
 
-class Api:
-    """起動した API サーバーへの HTTP クライアント。"""
-
-    def __init__(self, base_url: str) -> None:
-        # 実行環境の HTTP_PROXY などを使わず、loopback の API サーバーへ直接つなぐ。
-        self._client = httpx.Client(base_url=base_url, trust_env=False, timeout=30)
-
-    def close(self) -> None:
-        self._client.close()
-
-    def get(
-        self, path: str, *, params: Mapping[str, str | float] | None = None
-    ) -> httpx.Response:
-        return self._client.get(path, params=params)
-
-    def post(self, path: str, *, json: object = None) -> httpx.Response:
-        return self._client.post(path, json=json)
-
-    def post_content(
-        self, path: str, *, content: bytes, content_type: str = "application/json"
-    ) -> httpx.Response:
-        """本文をそのまま送る (JSON の値でない NaN などを含む本文)。"""
-        return self._client.post(
-            path, content=content, headers={"Content-Type": content_type}
-        )
-
-
 @dataclass(frozen=True)
 class Stack:
     """fake のデバイスと、それに接続した API サーバー。"""
 
     device: FakeAladdin
-    api: Api
-
-    def reset(self) -> None:
-        """前のテストや入力が残したデバイスの状態を捨てる。"""
-        self.device.reset()
+    api: httpx.Client
 
 
 API_COMMAND = [
@@ -883,7 +835,7 @@ def _isolated_env(settings: Mapping[str, str]) -> dict[str, str]:
 
 
 @contextmanager
-def run_api(settings: Mapping[str, str], *, log_path: Path) -> Generator[Api]:
+def run_api(settings: Mapping[str, str], *, log_path: Path) -> Generator[httpx.Client]:
     """
     `uvicorn popin_aladdin_api.main:app` を subprocess として起動する。
 
@@ -904,32 +856,24 @@ def run_api(settings: Mapping[str, str], *, log_path: Path) -> Generator[Api]:
         process.kill()
         process.wait()
         raise
-    api = Api(url)
     try:
-        yield api
+        # 実行環境の HTTP_PROXY などを使わず、loopback の API サーバーへ直接つなぐ。
+        with httpx.Client(base_url=url, trust_env=False, timeout=30) as api:
+            yield api
     finally:
-        api.close()
         _stop(process, log_path=log_path)
 
 
 @contextmanager
 def serve_stack(
-    log_path: Path,
-    *,
-    description_path: str = "/",
-    relative_control_urls: bool = False,
-    services: Collection[str] = tuple(_SERVICE_TYPES),
+    log_path: Path, *, device: FakeAladdin | None = None
 ) -> Generator[Stack]:
-    """fake のデバイスと、それに接続した API サーバーを 1 組起動する。引数は `FakeAladdin` の設定。"""
+    """fake のデバイス (省略時は既定の設定) と、それに接続した API サーバーを 1 組起動する。"""
     with (
-        FakeAladdin.serve(
-            description_path=description_path,
-            relative_control_urls=relative_control_urls,
-            services=services,
-        ) as device,
-        run_api(device.api_env(), log_path=log_path) as api,
+        device or FakeAladdin() as fake,
+        run_api(fake.api_env(), log_path=log_path) as api,
     ):
-        yield Stack(device, api)
+        yield Stack(fake, api)
 
 
 def _stop(process: subprocess.Popen[bytes], *, log_path: Path) -> None:

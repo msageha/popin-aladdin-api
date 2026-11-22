@@ -42,7 +42,7 @@ def _by_ip(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def test_discover_broadcasts_request_and_lists_replying_devices(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     # 応答の種別ごとに、JSON の長さのフィールドの形が違う (17 は 1 byte、19 / 21 は 4 byte)。
     # 4 byte の長さは、上位の byte も読むことを確かめるため 255 byte より長い JSON にする。
     devices = {
@@ -64,7 +64,7 @@ def test_discover_broadcasts_request_and_lists_replying_devices(stack: Stack) ->
 
 
 def test_discover_waits_for_replies_until_wait_seconds(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     device = _device("192.0.2.10")
     stack.device.discovery_replies = [discovery_reply(device)]
     # 最短の待ち時間 (0.5 秒) より遅れて届く応答も、指定した待ち時間の内なら拾う。
@@ -77,7 +77,7 @@ def test_discover_waits_for_replies_until_wait_seconds(stack: Stack) -> None:
 
 
 def test_discover_ignores_replies_after_wait_seconds(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.discovery_replies = [discovery_reply(_device("192.0.2.10"))]
     stack.device.discovery_reply_delay = 0.8
 
@@ -94,7 +94,7 @@ def test_discover_accepts_devices_other_than_the_configured_host(
 ) -> None:
     # 応答は 127.0.0.1 の fake から届く。接続先を別の address にした API サーバーでも拾う。
     device_reply = _device("127.0.0.1")
-    with FakeAladdin.serve() as device:
+    with FakeAladdin() as device:
         device.discovery_replies = [discovery_reply(device_reply)]
         settings = device.api_env() | {"POPIN_ALADDIN_HOST": "http://192.0.2.1"}
         with run_api(settings, log_path=tmp_path / "uvicorn.log") as api:
@@ -105,7 +105,7 @@ def test_discover_accepts_devices_other_than_the_configured_host(
 
 
 def test_discover_lists_each_device_once(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     device = _device("192.0.2.10")
     stack.device.discovery_replies = [
         discovery_reply(device, kind=17),
@@ -119,7 +119,7 @@ def test_discover_lists_each_device_once(stack: Stack) -> None:
 
 
 def test_discover_skips_replies_that_are_not_aladdin_devices(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     valid = _device("192.0.2.10")
     stack.device.discovery_replies = [
         b"other device",
@@ -139,7 +139,7 @@ def test_discover_skips_replies_that_are_not_aladdin_devices(stack: Stack) -> No
 
 
 def test_discover_without_replies_is_empty(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.get("/api/discover", params=_WAIT)
 
@@ -151,7 +151,7 @@ def test_discover_without_replies_is_empty(stack: Stack) -> None:
 def test_wait_outside_half_to_15_seconds_is_422(
     *, stack: Stack, wait: float | str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.get("/api/discover", params={"wait": wait})
 

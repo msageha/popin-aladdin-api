@@ -41,7 +41,7 @@ def _assert_frames(stack: Stack, *, expected: list[Frame]) -> None:
 @example(path="/api/keyboard", text='"\\\n\x00')
 @example(path="/api/keyboard", text="\U0001f600")
 def test_text_reaches_device_unchanged(*, stack: Stack, path: str, text: str) -> None:
-    stack.reset()
+    stack.device.reset()
     _, field = _TEXT_ENDPOINTS[path]
 
     response = stack.api.post(path, json={field: text})
@@ -53,7 +53,7 @@ def test_text_reaches_device_unchanged(*, stack: Stack, path: str, text: str) ->
 
 @pytest.mark.parametrize("path", ["/api/keyboard", "/api/voice"])
 def test_empty_text_is_sent(*, stack: Stack, path: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(path, json={"text": ""})
 
@@ -74,7 +74,7 @@ def test_empty_text_is_sent(*, stack: Stack, path: str) -> None:
 def test_invalid_request_is_422_and_not_sent(
     *, stack: Stack, path: str, body: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(path, json=body)
 
@@ -92,11 +92,13 @@ def test_invalid_request_is_422_and_not_sent(
 def test_text_with_lone_surrogate_is_422_and_not_sent(
     *, stack: Stack, path: str, escaped: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     _, field = _TEXT_ENDPOINTS[path]
 
-    response = stack.api.post_content(
-        path, content=f'{{"{field}": "{escaped}"}}'.encode()
+    response = stack.api.post(
+        path,
+        content=f'{{"{field}": "{escaped}"}}'.encode(),
+        headers={"Content-Type": "application/json"},
     )
 
     assert response.status_code == 422

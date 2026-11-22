@@ -20,15 +20,17 @@ class _Request(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _require_json_values(cls, data: object) -> object:
-        # JSON の構文は孤立した surrogate (U+D800 など) や NaN も通すが、前者は UTF-8 で表せず、
-        # 後者は JSON の値ではないので、デバイスへ送る前に拒否する。JSON の object でない本文は
-        # モデルの検証に任せる。
+        # 本文の parser は孤立した surrogate (U+D800 など) と NaN・Infinity も通すが、前者は UTF-8 で
+        # 表せず、後者は JSON の値ではないので、デバイスへ送る前に拒否する。JSON の object でない本文は
+        # モデルの検証に任せる。data を直接絞り込むと、戻り値の型が dict[Unknown, Unknown] になる。
         body: object = data
         if isinstance(body, dict):
             try:
                 json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
             except ValueError as err:
-                raise ValueError("request must contain only JSON values") from err
+                raise ValueError(
+                    "request must not contain NaN, Infinity or unpaired surrogates"
+                ) from err
         return data
 
 

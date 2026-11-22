@@ -69,7 +69,7 @@ _unknown_fields = st.dictionaries(
 
 
 def test_ping_sends_heartbeat_and_succeeds_on_reply(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/remote/ping")
 
@@ -87,7 +87,7 @@ def test_ping_sends_heartbeat_and_succeeds_on_reply(stack: Stack) -> None:
     ids=["closed", "other-frame"],
 )
 def test_ping_without_heartbeat_reply_is_504(*, stack: Stack, reply: TcpReply) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.respond_tcp(HEARTBEAT, reply=reply)
 
     response = stack.api.post("/api/remote/ping")
@@ -96,7 +96,7 @@ def test_ping_without_heartbeat_reply_is_504(*, stack: Stack, reply: TcpReply) -
 
 
 def test_version_handshake_identifies_this_client(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     assert stack.api.get("/api/remote/version").status_code == 200
     assert stack.api.get("/api/remote/version").status_code == 200
@@ -124,7 +124,7 @@ def test_version_handshake_identifies_this_client(stack: Stack) -> None:
 def test_version_reports_device_reply_fields(
     *, stack: Stack, reply: dict[str, Any], unknown: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.respond_tcp(VERSION, reply=unknown | reply)
 
     response = stack.api.get("/api/remote/version")
@@ -156,7 +156,7 @@ def test_version_reports_device_reply_fields(
 def test_unexpected_version_reply_is_502(
     *, stack: Stack, reply: JsonValue | bytes
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.respond_tcp(VERSION, reply=reply)
 
     response = stack.api.get("/api/remote/version")
@@ -165,7 +165,7 @@ def test_unexpected_version_reply_is_502(
 
 
 def test_album_reports_photos_and_light_version(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.get("/api/remote/album")
 
@@ -194,7 +194,7 @@ def test_album_reports_photos_and_light_version(stack: Stack) -> None:
     ids=["list-not-array", "count-not-integer", "size-not-integer"],
 )
 def test_unexpected_album_reply_is_502(*, stack: Stack, reply: dict[str, Any]) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.respond_tcp(ALBUM, reply=reply)
 
     response = stack.api.get("/api/remote/album")
@@ -219,7 +219,7 @@ def test_app_reports_installation_and_version(
     installed: dict[str, tuple[int, str]],
     expected: dict[str, Any],
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.installed_apps = installed
 
     response = stack.api.get("/api/remote/apps/jp.co.tver.tvapp")
@@ -242,7 +242,7 @@ def test_app_reports_installation_and_version(
 def test_package_that_is_not_an_android_package_name_is_422(
     *, stack: Stack, package: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.get(f"/api/remote/apps/{package}")
 

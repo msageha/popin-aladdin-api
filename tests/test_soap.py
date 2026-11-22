@@ -20,7 +20,7 @@ from tests.strategies import xml_text
 def test_read_action_is_sent_without_confirm_and_returns_outputs(
     *, stack: Stack, service: str, action: str, args: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/soap", json={"service": service, "action": action, "args": args}
@@ -46,7 +46,7 @@ def test_read_action_is_sent_without_confirm_and_returns_outputs(
 def test_action_not_known_as_read_only_without_confirm_is_400_and_not_sent(
     *, stack: Stack, service: str, action: str, confirm: bool | None
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     body: dict[str, Any] = {
         "service": service,
         "action": action,
@@ -62,7 +62,7 @@ def test_action_not_known_as_read_only_without_confirm_is_400_and_not_sent(
 
 
 def test_control_action_with_confirm_is_sent(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/soap",
@@ -97,7 +97,7 @@ def test_control_action_with_confirm_is_sent(stack: Stack) -> None:
 def test_string_arguments_reach_device_unchanged(
     *, stack: Stack, args: dict[str, str]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/soap",
@@ -115,7 +115,7 @@ def test_string_arguments_reach_device_unchanged(
 
 
 def test_null_argument_is_sent_as_empty_value(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/soap",
@@ -156,7 +156,7 @@ def test_null_argument_is_sent_as_empty_value(stack: Stack) -> None:
 def test_invalid_request_is_422_and_not_sent(
     *, stack: Stack, body: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/soap", json=body | {"confirm": True})
 
@@ -175,16 +175,18 @@ def test_invalid_request_is_422_and_not_sent(
 def test_argument_that_is_not_a_json_value_is_422_and_not_sent(
     *, stack: Stack, body: bytes
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
-    response = stack.api.post_content("/api/soap", content=body)
+    response = stack.api.post(
+        "/api/soap", content=body, headers={"Content-Type": "application/json"}
+    )
 
     assert response.status_code == 422
     assert stack.device.soap_calls == []
 
 
 def test_service_the_device_does_not_have_is_502(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post(
         "/api/soap",

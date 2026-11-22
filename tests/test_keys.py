@@ -60,7 +60,7 @@ def _assert_dpad_press(datagrams: list[str], *, code: int) -> None:
 
 @pytest.mark.parametrize("button", list(_DPAD_CODES))
 def test_dpad_key_is_pressed_then_released(*, stack: Stack, button: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json={"button": button})
 
@@ -73,7 +73,7 @@ def test_dpad_key_is_pressed_then_released(*, stack: Stack, button: str) -> None
 
 @pytest.mark.parametrize("button", list(_FOCUS_CODES))
 def test_focus_key_sends_press_and_release(*, stack: Stack, button: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json={"button": button})
 
@@ -83,7 +83,7 @@ def test_focus_key_sends_press_and_release(*, stack: Stack, button: str) -> None
 
 
 def test_home_long_holds_home_for_a_second(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     started = time.monotonic()
 
     response = stack.api.post("/api/key", json={"button": "home_long"})
@@ -100,7 +100,7 @@ def test_home_long_holds_home_for_a_second(stack: Stack) -> None:
 
 @pytest.mark.parametrize("button", list(_HARDWARE_CODES))
 def test_hardware_key_sends_single_key_press(*, stack: Stack, button: str) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json={"button": button})
 
@@ -109,7 +109,7 @@ def test_hardware_key_sends_single_key_press(*, stack: Stack, button: str) -> No
 
 
 def test_repeat_presses_the_key_that_many_times(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json={"button": "down", "repeat": 3})
 
@@ -128,7 +128,7 @@ def test_repeat_presses_the_key_that_many_times(stack: Stack) -> None:
 def test_repeat_range_presses_single_key_that_many_times(
     *, stack: Stack, repeat: int
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json={"button": "vol_up", "repeat": repeat})
 
@@ -153,7 +153,7 @@ def test_repeat_range_presses_single_key_that_many_times(
 def test_invalid_request_is_422_and_not_sent(
     *, stack: Stack, body: dict[str, object]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/key", json=body)
 
@@ -162,7 +162,7 @@ def test_invalid_request_is_422_and_not_sent(
 
 
 def test_key_during_long_press_waits_until_release(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     home, down = _DPAD_CODES["home"], _DPAD_CODES["down"]
     with ThreadPoolExecutor(max_workers=1) as executor:
         long_press = executor.submit(

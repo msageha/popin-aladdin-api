@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 from hypothesis import example, given, strategies as st
 
-from tests.harness import DEVICE_FIELDS, UDN, Stack, serve_stack
+from tests.harness import DEVICE_FIELDS, UDN, SoapCall, Stack, serve_stack
 
 
 def test_info_reports_device_description(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.get("/api/info")
 
@@ -42,7 +42,7 @@ def test_device_description_is_fetched_once_per_process(tmp_path: Path) -> None:
 def test_status_aggregates_transport_volume_mute_media_and_position(
     stack: Stack,
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     outputs = stack.device.soap_outputs
     outputs["GetTransportInfo"] |= {
         "CurrentTransportState": "PAUSED_PLAYBACK",
@@ -65,10 +65,18 @@ def test_status_aggregates_transport_volume_mute_media_and_position(
         "track_duration_seconds": 3723.0,
         "position_seconds": 45.0,
     }
+    # 各値を、その値を持つ service から読む (読む順序は決まっていない)。
+    assert sorted((c.service, c.action) for c in stack.device.soap_calls) == [
+        ("AVTransport", "GetMediaInfo"),
+        ("AVTransport", "GetPositionInfo"),
+        ("AVTransport", "GetTransportInfo"),
+        ("RenderingControl", "GetMute"),
+        ("RenderingControl", "GetVolume"),
+    ]
 
 
 def test_status_fails_with_502_when_any_part_fails(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetMute"] = {"CurrentMute": "maybe"}
 
     response = stack.api.get("/api/status")
@@ -77,7 +85,7 @@ def test_status_fails_with_502_when_any_part_fails(stack: Stack) -> None:
 
 
 def test_transport_reports_state_status_and_speed(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetTransportInfo"] = {
         "CurrentTransportState": "STOPPED",
         "CurrentTransportStatus": "ERROR_OCCURRED",
@@ -92,13 +100,13 @@ def test_transport_reports_state_status_and_speed(stack: Stack) -> None:
         "status": "ERROR_OCCURRED",
         "speed": "1",
     }
-    assert [(c.service, c.action, c.args) for c in stack.device.soap_calls] == [
-        ("AVTransport", "GetTransportInfo", {"InstanceID": "0"})
+    assert stack.device.soap_calls == [
+        SoapCall("AVTransport", "GetTransportInfo", {"InstanceID": "0"})
     ]
 
 
 def test_position_reports_track_and_times(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetPositionInfo"] = {
         "Track": "3",
         "TrackDuration": "0:03:32",
@@ -124,7 +132,7 @@ def test_position_reports_track_and_times(stack: Stack) -> None:
 
 
 def test_position_without_media_has_no_seconds_or_uri(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetPositionInfo"] = {
         "Track": "0",
         "TrackDuration": "NOT_IMPLEMENTED",
@@ -150,7 +158,7 @@ def test_position_without_media_has_no_seconds_or_uri(stack: Stack) -> None:
 def test_position_that_is_not_a_duration_has_no_seconds(
     *, stack: Stack, reported: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetPositionInfo"] |= {
         "TrackDuration": reported,
         "RelTime": reported,
@@ -176,7 +184,7 @@ def test_position_that_is_not_a_duration_has_no_seconds(
 def test_position_converts_upnp_durations_to_seconds(
     *, stack: Stack, hours: int, minutes: int, seconds: int, fraction: str | None
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     duration = f"{hours}:{minutes:02d}:{seconds:02d}"
     if fraction is not None:
         duration += f".{fraction}"
@@ -196,7 +204,7 @@ def test_position_converts_upnp_durations_to_seconds(
 
 
 def test_media_reports_current_media(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetMediaInfo"] = {
         "NrTracks": "1",
         "MediaDuration": "0:03:32",
@@ -218,7 +226,7 @@ def test_media_reports_current_media(stack: Stack) -> None:
 
 
 def test_protocol_info_lists_source_and_sink_entries(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetProtocolInfo"] = {
         "Source": "",
         "Sink": "http-get:*:video/mp4:*,http-get:*:audio/mpeg:*",
@@ -235,15 +243,17 @@ def test_protocol_info_lists_source_and_sink_entries(stack: Stack) -> None:
 
 @pytest.mark.parametrize("volume", [0, 35, 100])
 def test_volume_reports_master_volume(*, stack: Stack, volume: int) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetVolume"] = {"CurrentVolume": str(volume)}
 
     response = stack.api.get("/api/volume")
 
     assert response.status_code == 200
     assert response.json() == {"volume": volume}
-    assert [(c.action, c.args) for c in stack.device.soap_calls] == [
-        ("GetVolume", {"InstanceID": "0", "Channel": "Master"})
+    assert stack.device.soap_calls == [
+        SoapCall(
+            "RenderingControl", "GetVolume", {"InstanceID": "0", "Channel": "Master"}
+        )
     ]
 
 
@@ -251,7 +261,7 @@ def test_volume_reports_master_volume(*, stack: Stack, volume: int) -> None:
 def test_volume_outside_0_to_100_from_device_is_502(
     *, stack: Stack, reported: str
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetVolume"] = {"CurrentVolume": reported}
 
     response = stack.api.get("/api/volume")
@@ -272,21 +282,23 @@ def test_volume_outside_0_to_100_from_device_is_502(
     ],
 )
 def test_mute_reads_upnp_boolean(*, stack: Stack, reported: str, mute: bool) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetMute"] = {"CurrentMute": reported}
 
     response = stack.api.get("/api/mute")
 
     assert response.status_code == 200
     assert response.json() == {"mute": mute}
-    assert [(c.action, c.args) for c in stack.device.soap_calls] == [
-        ("GetMute", {"InstanceID": "0", "Channel": "Master"})
+    assert stack.device.soap_calls == [
+        SoapCall(
+            "RenderingControl", "GetMute", {"InstanceID": "0", "Channel": "Master"}
+        )
     ]
 
 
 @pytest.mark.parametrize("reported", ["2", "maybe", ""])
 def test_mute_that_is_not_a_boolean_is_502(*, stack: Stack, reported: str) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.soap_outputs["GetMute"] = {"CurrentMute": reported}
 
     response = stack.api.get("/api/mute")

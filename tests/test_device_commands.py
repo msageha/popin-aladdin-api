@@ -28,7 +28,7 @@ def _command(mode_type: tuple[int, int]) -> dict[str, JsonValue]:
 
 
 def test_free_memory_sends_command_without_waiting_for_reply(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/memory/free")
 
@@ -39,7 +39,7 @@ def test_free_memory_sends_command_without_waiting_for_reply(stack: Stack) -> No
 
 
 def test_capture_returns_image_url_on_the_device_host(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[SCREENSHOT] = [
         {"action": 30235, "imagePath": "http://%s:7434/screenshot/1.png"}
     ]
@@ -58,7 +58,7 @@ def test_capture_returns_image_url_on_the_device_host(stack: Stack) -> None:
 def test_capture_ignores_other_replies_until_the_screenshot_reply(
     stack: Stack,
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[SCREENSHOT] = [
         b"not json",
         b"[30235]",
@@ -74,7 +74,7 @@ def test_capture_ignores_other_replies_until_the_screenshot_reply(
 
 
 def test_capture_without_reply_is_504(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[SCREENSHOT] = []
 
     response = stack.api.post("/api/capture")
@@ -100,7 +100,7 @@ def test_capture_without_reply_is_504(stack: Stack) -> None:
 def test_screenshot_reply_without_image_path_is_502(
     *, stack: Stack, reply: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[SCREENSHOT] = [reply]
 
     response = stack.api.post("/api/capture")
@@ -109,7 +109,7 @@ def test_screenshot_reply_without_image_path_is_502(
 
 
 def test_device_reports_runtime_information(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     reply: dict[str, JsonValue] = {
         "action": 30410,
         "deviceName": "Aladdin 2",
@@ -141,7 +141,7 @@ def test_device_reports_runtime_information(stack: Stack) -> None:
 
 
 def test_device_without_reply_is_504(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[DEVICE_INFO] = []
 
     response = stack.api.get("/api/remote/device")
@@ -150,7 +150,7 @@ def test_device_without_reply_is_504(stack: Stack) -> None:
 
 
 def test_device_reply_with_unexpected_value_is_502(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
     stack.device.command_replies[DEVICE_INFO] = [{"action": 30410, "runtime": "long"}]
 
     response = stack.api.get("/api/remote/device")
@@ -159,7 +159,7 @@ def test_device_reply_with_unexpected_value_is_502(stack: Stack) -> None:
 
 
 def test_power_off_with_confirm_sends_power_off(stack: Stack) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/power/off", json={"confirm": True})
 
@@ -172,7 +172,7 @@ def test_power_off_with_confirm_sends_power_off(stack: Stack) -> None:
 def test_power_off_without_confirm_is_400_and_not_sent(
     *, stack: Stack, body: dict[str, Any]
 ) -> None:
-    stack.reset()
+    stack.device.reset()
 
     response = stack.api.post("/api/power/off", json=body)
 
