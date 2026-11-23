@@ -26,7 +26,7 @@ jobs:
 
       # mise.lock があるため `mise install --locked` になり、mise.toml との不整合はここで失敗する。
       - name: Install mise
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
 
       # lint hook (mise run lint) は uv run --locked で動くため、uv.lock と pyproject.toml の不整合もここで失敗する。
       # zizmor は次の step で online audit 込みで、gitleaks は gitleaks job で全履歴を検査する
@@ -56,7 +56,7 @@ jobs:
 
       # この job が使う gitleaks だけを入れる。postinstall の hook (prek install) は入れていない prek を使うので走らせない。
       - name: Install mise
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           install_args: gitleaks
         env:
@@ -78,7 +78,7 @@ jobs:
       # テストが使うのは uv (と uv.lock の依存) だけなので、ほかのツールは入れない。
       # postinstall の hook (prek install) は入れていない prek を使うので走らせない。
       - name: Install mise
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           install_args: uv
         env:
@@ -110,7 +110,7 @@ jobs:
       # check-image が使うのは runner の docker と curl だけなので、mise 本体だけを入れ、ツールの導入・キャッシュの
       # 復元・postinstall の hook (prek install) を省く。
       - name: Install mise
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           install: false
           cache: false
