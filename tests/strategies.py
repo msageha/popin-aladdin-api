@@ -22,14 +22,21 @@ def as_json(value: object) -> str:
     return json.dumps(value, sort_keys=True)
 
 
-non_boolean_json = st.recursive(
+def _json_values(scalars: st.SearchStrategy[object]) -> st.SearchStrategy[object]:
+    return st.recursive(
+        scalars,
+        lambda children: (
+            st.lists(children, max_size=3)
+            | st.dictionaries(st.text(), children, max_size=3)
+        ),
+        max_leaves=5,
+    )
+
+
+non_boolean_json = _json_values(
     st.none()
     | st.integers()
     | st.floats(allow_nan=False, allow_infinity=False)
-    | st.text(),
-    lambda children: (
-        st.lists(children, max_size=3)
-        | st.dictionaries(st.text(), children, max_size=3)
-    ),
-    max_leaves=5,
+    | st.text()
 )
+non_number_json = _json_values(st.none() | st.booleans() | st.text())

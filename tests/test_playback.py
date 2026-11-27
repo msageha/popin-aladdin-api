@@ -14,7 +14,7 @@ import pytest
 from hypothesis import example, given, strategies as st
 
 from tests.harness import SoapCall, Stack
-from tests.strategies import as_json, non_boolean_json, xml_text
+from tests.strategies import as_json, non_boolean_json, non_number_json, xml_text
 
 _AVT = "AVTransport"
 _RC = "RenderingControl"
@@ -66,6 +66,36 @@ def test_set_volume_outside_0_to_100_is_422_and_not_sent(
     assert stack.device.soap_calls == []
     # README「エラー」: 422 の detail には送った値を含めない。
     assert all("input" not in error for error in response.json()["detail"])
+
+
+# JSON Schema の integer は小数部が 0 の数 (35.0) も含む。
+@given(volume=st.integers(min_value=0, max_value=100))
+@example(volume=35)
+def test_set_volume_to_integer_with_zero_fraction_sends_it_as_integer(
+    *, stack: Stack, volume: int
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/volume", json={"volume": float(volume)})
+
+    assert response.status_code == 200
+    assert stack.device.soap_calls == [
+        SoapCall(_RC, "SetVolume", _MASTER | {"DesiredVolume": str(volume)})
+    ]
+
+
+@given(volume=non_number_json)
+@example(volume=True)
+@example(volume="35")
+def test_set_volume_to_non_number_is_422_and_not_sent(
+    *, stack: Stack, volume: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/volume", json={"volume": volume})
+
+    assert response.status_code == 422
+    assert stack.device.soap_calls == []
 
 
 @pytest.mark.parametrize(("mute", "desired"), [(True, "1"), (False, "0")])
@@ -139,6 +169,7 @@ def test_transport_button_sends_its_action(
 @example(seconds=59.5)
 @example(seconds=3599.6)
 @example(seconds=1e300)
+@example(seconds=90)  # JSON の整数も number として受け付ける。
 def test_seek_sends_rel_time_target_of_the_position(
     *, stack: Stack, seconds: float
 ) -> None:
@@ -182,6 +213,20 @@ def test_seek_to_negative_or_non_finite_position_is_422_and_not_sent(
     response = stack.api.post(
         "/api/seek", content=body, headers={"Content-Type": "application/json"}
     )
+
+    assert response.status_code == 422
+    assert stack.device.soap_calls == []
+
+
+@given(seconds=non_number_json)
+@example(seconds=True)
+@example(seconds="90")
+def test_seek_to_non_number_is_422_and_not_sent(
+    *, stack: Stack, seconds: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/seek", json={"seconds": seconds})
 
     assert response.status_code == 422
     assert stack.device.soap_calls == []
