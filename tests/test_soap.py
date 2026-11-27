@@ -6,7 +6,7 @@ import pytest
 from hypothesis import example, given, strategies as st
 
 from tests.harness import Stack
-from tests.strategies import xml_text
+from tests.strategies import non_boolean_json, xml_text
 
 
 @pytest.mark.parametrize(
@@ -83,6 +83,29 @@ def test_control_action_with_confirm_is_sent(stack: Stack) -> None:
     [call] = stack.device.soap_calls
     assert (call.service, call.action) == ("RenderingControl", "SetVolume")
     assert call.args == {"InstanceID": "0", "Channel": "Master", "DesiredVolume": "20"}
+
+
+@given(confirm=non_boolean_json)
+@example(confirm="yes")
+@example(confirm="true")
+@example(confirm=1)
+def test_control_action_with_non_boolean_confirm_is_422_and_not_sent(
+    *, stack: Stack, confirm: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post(
+        "/api/soap",
+        json={
+            "service": "RenderingControl",
+            "action": "SetVolume",
+            "args": {"InstanceID": 0, "Channel": "Master", "DesiredVolume": 20},
+            "confirm": confirm,
+        },
+    )
+
+    assert response.status_code == 422
+    assert stack.device.soap_calls == []
 
 
 @given(

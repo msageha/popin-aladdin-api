@@ -14,7 +14,7 @@ import pytest
 from hypothesis import example, given, strategies as st
 
 from tests.harness import SoapCall, Stack
-from tests.strategies import as_json, xml_text
+from tests.strategies import as_json, non_boolean_json, xml_text
 
 _AVT = "AVTransport"
 _RC = "RenderingControl"
@@ -79,6 +79,21 @@ def test_set_mute_sends_upnp_boolean(*, stack: Stack, mute: bool, desired: str) 
     assert stack.device.soap_calls == [
         SoapCall(_RC, "SetMute", _MASTER | {"DesiredMute": desired})
     ]
+
+
+@given(mute=non_boolean_json)
+@example(mute="yes")
+@example(mute="false")
+@example(mute=0)
+def test_set_mute_to_non_boolean_is_422_and_not_sent(
+    *, stack: Stack, mute: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/mute", json={"mute": mute})
+
+    assert response.status_code == 422
+    assert stack.device.soap_calls == []
 
 
 @pytest.mark.parametrize(
@@ -241,6 +256,23 @@ def test_cast_without_autoplay_only_loads_uri(stack: Stack) -> None:
     assert response.status_code == 200
     assert response.json() == {"uri": uri, "autoplay": False}
     assert stack.device.actions == ["SetAVTransportURI"]
+
+
+@given(autoplay=non_boolean_json)
+@example(autoplay="no")
+@example(autoplay="false")
+@example(autoplay=0)
+def test_cast_with_non_boolean_autoplay_is_422_and_not_sent(
+    *, stack: Stack, autoplay: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post(
+        "/api/cast", json={"uri": "http://192.0.2.50/a.mp4", "autoplay": autoplay}
+    )
+
+    assert response.status_code == 422
+    assert stack.device.soap_calls == []
 
 
 def test_cast_sends_given_metadata_unchanged(stack: Stack) -> None:

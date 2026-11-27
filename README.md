@@ -146,7 +146,7 @@ curl -X POST http://127.0.0.1:8000/api/deeplink -H 'Content-Type: application/js
 | Status | 意味                                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400    | `confirm: true` が要る操作に付いていない                                                                                                         |
-| 422    | リクエストが不正 (未知のボタン名・範囲外の音量等)。`detail` には送った値を含めない                                                               |
+| 422    | リクエストが不正 (未知のボタン名・範囲外の音量・boolean の項目に `true` / `false` 以外の値等)。`detail` には送った値を含めない                   |
 | 502    | デバイスがエラーや想定外の応答を返した。SOAP fault なら body に `fault_code` (SOAP faultcode) と `upnp_error_code` (UPnPError errorCode) を含む  |
 | 504    | デバイスに接続できない・通信が途中で切れた・タイムアウトした。`/api/capture`・`/api/remote/device` では、UDP の応答が `TIMEOUT` 秒以内に届かない |
 

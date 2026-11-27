@@ -5,6 +5,7 @@ UDP の JSON コマンド: POST /api/memory/free・capture・power/off と GET /
 from typing import Any
 
 import pytest
+from hypothesis import example, given
 
 from tests.harness import (
     DEVICE_INFO,
@@ -14,7 +15,7 @@ from tests.harness import (
     JsonValue,
     Stack,
 )
-from tests.strategies import as_json
+from tests.strategies import as_json, non_boolean_json
 
 
 def _command(mode_type: tuple[int, int]) -> dict[str, JsonValue]:
@@ -177,4 +178,19 @@ def test_power_off_without_confirm_is_400_and_not_sent(
     response = stack.api.post("/api/power/off", json=body)
 
     assert response.status_code == 400
+    assert stack.device.received_commands() == []
+
+
+@given(confirm=non_boolean_json)
+@example(confirm="yes")
+@example(confirm="true")
+@example(confirm=1)
+def test_power_off_with_non_boolean_confirm_is_422_and_not_sent(
+    *, stack: Stack, confirm: object
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/power/off", json={"confirm": confirm})
+
+    assert response.status_code == 422
     assert stack.device.received_commands() == []

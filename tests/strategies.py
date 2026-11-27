@@ -20,3 +20,16 @@ def as_json(value: object) -> str:
     Python の == は True と 1、False と 0 を等しいとみなし、JSON の型の違いを見逃す。
     """
     return json.dumps(value, sort_keys=True)
+
+
+non_boolean_json = st.recursive(
+    st.none()
+    | st.integers()
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(),
+    lambda children: (
+        st.lists(children, max_size=3)
+        | st.dictionaries(st.text(), children, max_size=3)
+    ),
+    max_leaves=5,
+)
