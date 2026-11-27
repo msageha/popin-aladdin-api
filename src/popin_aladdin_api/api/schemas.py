@@ -3,18 +3,33 @@ from typing import Annotated, Any
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictBool,
+    StrictFloat,
     StringConstraints,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from popin_aladdin_api.device.models import LightButton, PlayMode, ProjectorKey
 from popin_aladdin_api.device.renderer import MAX_VOLUME
 
 # SOAP の action / 引数名はそのまま XML 要素名になるので、XML の名前として妥当な文字列に限る。
 type XmlName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")]
+
+
+def _reject_non_number(value: object) -> object:
+    if isinstance(value, bool | str):
+        raise PydanticCustomError("int_type", "Input should be a valid integer")
+    return value
+
+
+# JSON Schema の integer は 35.0 のように小数部が 0 の数も含むので、それを拒否する StrictInt ではなく、
+# int の変換が受け付ける値から boolean と文字列だけを除く。type 文で定義すると、Field の ge / le が
+# JSON Schema の minimum / maximum にならない (pydantic 2.14) ので代入で定義する。
+JsonInt = Annotated[int, BeforeValidator(_reject_non_number)]
 
 
 class _Request(BaseModel):
@@ -37,7 +52,7 @@ class _Request(BaseModel):
 
 
 class Volume(_Request):
-    volume: int = Field(
+    volume: JsonInt = Field(
         ge=0,
         le=MAX_VOLUME,
         description=f"マスター音量 (0..{MAX_VOLUME})",
@@ -52,7 +67,7 @@ class Mute(_Request):
 
 
 class SeekRequest(_Request):
-    seconds: float = Field(
+    seconds: StrictFloat = Field(
         ge=0,
         allow_inf_nan=False,
         description="先頭からの絶対位置 (秒、REL_TIME)",
@@ -99,7 +114,7 @@ class LightRequest(_Request):
     button: LightButton = Field(
         description="シーリングライトのボタン", examples=["on", "off", "brighter"]
     )
-    repeat: int = Field(
+    repeat: JsonInt = Field(
         default=1,
         ge=1,
         le=50,
@@ -115,7 +130,7 @@ class KeyRequest(_Request):
         "prime_video / custom / custom_long)",
         examples=["down", "ok", "back", "youtube"],
     )
-    repeat: int = Field(default=1, ge=1, le=50, description="押す回数")
+    repeat: JsonInt = Field(default=1, ge=1, le=50, description="押す回数")
 
 
 class TextRequest(_Request):
