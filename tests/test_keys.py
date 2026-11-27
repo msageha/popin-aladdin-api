@@ -6,8 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
 
 from tests.harness import Stack, serve_stack
+from tests.strategies import non_number_json
 
 # docs/protocol.md「独自プロトコル」の UDP キー入力の code。
 _DPAD_CODES = {"home": 35, "up": 36, "right": 37, "down": 38, "ok": 49, "left": 50}
@@ -138,6 +140,32 @@ def test_repeat_range_presses_single_key_that_many_times(
         stack.device.received_keys()
         == [f"KEYPRESSES:{_HARDWARE_CODES['vol_up']}"] * repeat
     )
+
+
+# JSON Schema の integer は小数部が 0 の数 (3.0) も含む。
+def test_repeat_with_zero_fraction_presses_the_key_that_many_times(
+    stack: Stack,
+) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/key", json={"button": "vol_up", "repeat": 3.0})
+
+    assert response.status_code == 200
+    assert (
+        stack.device.received_keys() == [f"KEYPRESSES:{_HARDWARE_CODES['vol_up']}"] * 3
+    )
+
+
+@given(repeat=non_number_json)
+@example(repeat=True)
+@example(repeat="3")
+def test_non_number_repeat_is_422_and_not_sent(*, stack: Stack, repeat: object) -> None:
+    stack.device.reset()
+
+    response = stack.api.post("/api/key", json={"button": "vol_up", "repeat": repeat})
+
+    assert response.status_code == 422
+    assert stack.device.received_keys() == []
 
 
 @pytest.mark.parametrize(
