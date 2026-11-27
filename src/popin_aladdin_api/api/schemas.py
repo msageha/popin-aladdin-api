@@ -39,7 +39,9 @@ class Volume(_Request):
 
 
 class Mute(_Request):
-    mute: bool = Field(description="True でミュート、False で解除", examples=[True])
+    mute: bool = Field(
+        strict=True, description="true でミュート、false で解除", examples=[True]
+    )
 
 
 class SeekRequest(_Request):
@@ -83,7 +85,9 @@ class CastRequest(_Request):
         default=None,
         description="DIDL-Lite XML を明示する場合に指定。省略時は title / upnp_class から生成",
     )
-    autoplay: bool = Field(default=True, description="読み込み直後に Play を送る")
+    autoplay: bool = Field(
+        default=True, strict=True, description="読み込み直後に Play を送る"
+    )
 
 
 class LightRequest(_Request):
@@ -124,7 +128,9 @@ class DeeplinkRequest(_Request):
 class PowerOffRequest(_Request):
     confirm: bool = Field(
         default=False,
-        description="電源を切るには true が必須。切った後はこの API から再点灯できない",
+        strict=True,
+        description="電源を切るには JSON の boolean の true が必須 (文字列や数値は受け付けない)。"
+        "切った後はこの API から再点灯できない",
     )
 
 
@@ -145,5 +151,7 @@ class SoapRequest(_Request):
     )
     confirm: bool = Field(
         default=False,
-        description="読み取り専用と分かっているアクション以外を送るには true が必須",
+        strict=True,
+        description="読み取り専用と分かっているアクション以外を送るには JSON の boolean の "
+        "true が必須 (文字列や数値は受け付けない)",
     )
