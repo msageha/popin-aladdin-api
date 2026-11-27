@@ -22,7 +22,6 @@ def as_json(value: object) -> str:
     return json.dumps(value, sort_keys=True)
 
 
-# boolean 以外の JSON の値。true / false だけを受け付ける項目に送る。
 non_boolean_json = st.recursive(
     st.none()
     | st.integers()

@@ -1,7 +1,14 @@
 import json
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StringConstraints,
+    model_validator,
+)
 
 from popin_aladdin_api.device.models import LightButton, PlayMode, ProjectorKey
 from popin_aladdin_api.device.renderer import MAX_VOLUME
@@ -39,8 +46,8 @@ class Volume(_Request):
 
 
 class Mute(_Request):
-    mute: bool = Field(
-        strict=True, description="true でミュート、false で解除", examples=[True]
+    mute: StrictBool = Field(
+        description="true でミュート、false で解除", examples=[True]
     )
 
 
@@ -85,9 +92,7 @@ class CastRequest(_Request):
         default=None,
         description="DIDL-Lite XML を明示する場合に指定。省略時は title / upnp_class から生成",
     )
-    autoplay: bool = Field(
-        default=True, strict=True, description="読み込み直後に Play を送る"
-    )
+    autoplay: StrictBool = Field(default=True, description="読み込み直後に Play を送る")
 
 
 class LightRequest(_Request):
@@ -126,11 +131,9 @@ class DeeplinkRequest(_Request):
 
 
 class PowerOffRequest(_Request):
-    confirm: bool = Field(
+    confirm: StrictBool = Field(
         default=False,
-        strict=True,
-        description="電源を切るには JSON の boolean の true が必須 (文字列や数値は受け付けない)。"
-        "切った後はこの API から再点灯できない",
+        description="電源を切るには true が必須。切った後はこの API から再点灯できない",
     )
 
 
@@ -149,9 +152,7 @@ class SoapRequest(_Request):
         description="アクション引数",
         examples=[{"InstanceID": 0}],
     )
-    confirm: bool = Field(
+    confirm: StrictBool = Field(
         default=False,
-        strict=True,
-        description="読み取り専用と分かっているアクション以外を送るには JSON の boolean の "
-        "true が必須 (文字列や数値は受け付けない)",
+        description="読み取り専用と分かっているアクション以外を送るには true が必須",
     )
